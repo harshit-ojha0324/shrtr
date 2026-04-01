@@ -1,0 +1,57 @@
+{
+  "title": "shrtr",
+  "uid": "shrtr-main",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Requests/sec by route",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum by (route) (rate(http_request_duration_seconds_count[1m]))", "legendFormat": "{{route}}" }]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Redirect latency p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/{code}\"}[1m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/{code}\"}[1m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/{code}\"}[1m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Cache hit ratio",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "targets": [{ "expr": "sum(rate(cache_ops_total{result=\"hit\"}[5m])) / sum(rate(cache_ops_total[5m]))", "legendFormat": "hit ratio" }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Rate-limit rejections/sec (429s)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "targets": [{ "expr": "sum(rate(rate_limit_decisions_total{allowed=\"false\"}[1m]))", "legendFormat": "rejected" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Consumer lag (pending entries)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [{ "expr": "max(stream_pending_entries)", "legendFormat": "pending" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Events: published vs processed /sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(clicks_published_total[1m]))", "legendFormat": "published" },
+        { "expr": "sum(rate(worker_events_processed_total[1m]))", "legendFormat": "processed" },
+        { "expr": "sum(rate(worker_events_duplicate_total[1m]))", "legendFormat": "deduped" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Errors & DLQ",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(api_errors_total[1m]))", "legendFormat": "api errors" },
+        { "expr": "sum(rate(worker_events_dlq_total[1m]))", "legendFormat": "dlq" },
+        { "expr": "sum(rate(clicks_dropped_total[1m]))", "legendFormat": "dropped events" }
+      ]
+    }
+  ]
+}
