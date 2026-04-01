@@ -42,7 +42,12 @@ return {allowed, tostring(tokens)}
 
 
 def compute_take(
-    tokens: float | None, ts_ms: int | None, capacity: int, refill_per_s: float, now_ms: int, cost: float = 1.0
+    tokens: float | None,
+    ts_ms: int | None,
+    capacity: int,
+    refill_per_s: float,
+    now_ms: int,
+    cost: float = 1.0,
 ) -> tuple[bool, float]:
     """Pure-Python reference of the Lua logic. Unit-tested with a frozen clock;
     the Lua script mirrors this exactly."""
@@ -93,4 +98,9 @@ class RateLimiter:
         allowed = bool(int(res[0]))
         remaining = float(res[1])
         retry_after = 0 if allowed else max(1, int((cost - remaining) / refill_per_s + 0.999))
-        return RateDecision(allowed=allowed, remaining=remaining, capacity=capacity, retry_after_s=retry_after)
+        return RateDecision(
+            allowed=allowed,
+            remaining=remaining,
+            capacity=capacity,
+            retry_after_s=retry_after,
+        )
