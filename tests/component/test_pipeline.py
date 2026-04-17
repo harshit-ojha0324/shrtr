@@ -30,7 +30,12 @@ HEADERS = {"X-API-Key": RAW_KEY}
 
 @pytest.fixture()
 def stack():
-    """App wired to in-memory sqlite + fakeredis, plus a worker on the same stores."""
+    """App wired to in-memory sqlite + fakeredis, plus a worker on the same stores.
+
+    One explicit event loop is shared by the fixture setup, the run() helper,
+    and the loop-bound async objects (aiosqlite engine, fakeredis)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app = create_app()
     engine = create_async_engine("sqlite+aiosqlite://")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -44,13 +49,16 @@ def stack():
                 ApiKey(
                     key_hash=hashlib.sha256(RAW_KEY.encode()).hexdigest(),
                     name="component",
+                    # refill must be slow enough that the wall clock cannot re-earn
+                    # tokens during the 40-request burst test (30/s made the 429
+                    # disappear whenever the loop averaged >~8.5ms/request)
                     rate_capacity=30,
-                    refill_per_s=30.0,
+                    refill_per_s=0.5,
                 )
             )
             await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(setup())
+    loop.run_until_complete(setup())
 
     # count SELECTs so we can prove cache hits skip the database
     sql_counter = {"selects": 0}
@@ -77,6 +85,9 @@ def stack():
         worker._link_id_cache = {}
 
         yield client, redis, sessions, worker, sql_counter
+
+    asyncio.set_event_loop(None)
+    loop.close()
 
 
 def run(coro):
@@ -153,13 +164,23 @@ def test_negative_cache_blocks_second_db_lookup(stack):
 
 def test_rate_limit_burst_429(stack):
     client, _, _, _, _ = stack
-    statuses = [client.get("/api/v1/links?limit=1", headers=HEADERS).status_code for _ in range(40)]
-    assert 429 in statuses
-    idx = statuses.index(429)
+    first = client.get("/api/v1/links?limit=1", headers=HEADERS)
+    assert first.status_code == 200  # burst allowed up to capacity first
+    # X-RateLimit-* headers (advertised in the README) on an allowed response
+    assert first.headers["X-RateLimit-Limit"] == "30"
+    assert first.headers["X-RateLimit-Remaining"] == "29"
+
+    statuses = [first.status_code] + [
+        client.get("/api/v1/links?limit=1", headers=HEADERS).status_code for _ in range(39)
+    ]
+    assert 429 in statuses and statuses.index(429) > 0
+
+    # refill is 0.5 tokens/s, so the wall clock cannot re-earn a token during
+    # the burst: the follow-up request is deterministically limited too
     r = client.get("/api/v1/links?limit=1", headers=HEADERS)
-    if r.status_code == 429:
-        assert "retry-after" in {k.lower() for k in r.headers}
-    assert statuses[0] == 200 and idx > 0  # burst allowed up to capacity first
+    assert r.status_code == 429
+    assert "retry-after" in {k.lower() for k in r.headers}
+    assert r.headers["X-RateLimit-Remaining"] == "0"
 
 
 def test_metrics_endpoint(stack):

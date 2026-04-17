@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     base_url: str = "http://localhost:8000"
 
+    # Redis connection pool (API): blocking pool so bursts queue briefly
+    # instead of erroring when all connections are checked out
+    redis_max_connections: int = 200
+    redis_pool_timeout_s: float = 2.0
+
     # Cache (MVP: cache-aside with TTL jitter + negative caching)
     cache_ttl_seconds: int = 86400
     cache_jitter_seconds: int = 3600
@@ -26,6 +31,7 @@ class Settings(BaseSettings):
     stream_group: str = "analytics"
     stream_maxlen: int = 1_000_000
     dlq_key: str = "clicks:dlq"
+    dlq_maxlen: int = 10_000
     worker_batch_size: int = 100
     worker_block_ms: int = 5000
     worker_reclaim_min_idle_ms: int = 60_000

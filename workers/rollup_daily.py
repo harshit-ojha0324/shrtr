@@ -39,15 +39,12 @@ async def run(days_back: int = 2) -> None:
                 )
             ).all()
             if rows:
-                values = [
-                    {
-                        "link_id": r.link_id,
-                        "bucket_start": r.bucket_start,
-                        "clicks": int(r.clicks),
-                    }
-                    for r in rows
-                ]
-                upsert = upsert_stmt(session, ClickRollupDaily).values(values)
+                upsert = upsert_stmt(session, ClickRollupDaily).values(
+                    [
+                        {"link_id": r.link_id, "bucket_start": r.bucket_start, "clicks": int(r.clicks)}
+                        for r in rows
+                    ]
+                )
                 upsert = upsert.on_conflict_do_update(
                     index_elements=["link_id", "bucket_start"],
                     set_={"clicks": upsert.excluded.clicks},  # recompute, don't add (idempotent)

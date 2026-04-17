@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from redis.asyncio import Redis
+from redis.asyncio import BlockingConnectionPool, Redis
 
 from app.api import routes_health, routes_links, routes_redirect
 from app.config import get_settings
@@ -21,7 +21,17 @@ def create_app() -> FastAPI:
         app.state.settings = settings
         app.state.engine = make_engine(settings)
         app.state.sessionmaker = make_sessionmaker(app.state.engine)
-        app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        # BlockingConnectionPool: when the pool is exhausted under a burst,
+        # callers WAIT (up to timeout) for a free connection instead of getting
+        # MaxConnectionsError -> 500s. Found by k6 at ~500 rps on one worker.
+        app.state.redis = Redis(
+            connection_pool=BlockingConnectionPool.from_url(
+                settings.redis_url,
+                max_connections=settings.redis_max_connections,
+                timeout=settings.redis_pool_timeout_s,
+                decode_responses=True,
+            )
+        )
         app.state.link_cache = LinkCache(app.state.redis, settings)
         app.state.rate_limiter = RateLimiter(app.state.redis)
         try:

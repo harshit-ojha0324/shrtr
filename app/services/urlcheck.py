@@ -7,6 +7,7 @@ is not caught (DNS rebinding). We never fetch target URLs server-side, which is 
 real mitigation here.
 """
 import ipaddress
+import socket
 from urllib.parse import urlsplit
 
 MAX_URL_LENGTH = 2048
@@ -16,6 +17,20 @@ _BLOCKED_HOSTS = {"localhost", "localhost.localdomain", "0.0.0.0", "[::1]", "::1
 
 class InvalidURLError(ValueError):
     pass
+
+
+def _host_as_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse a host that is an IP literal, including the alternate IPv4 spellings
+    browsers accept but ipaddress.ip_address rejects: decimal (2130706433),
+    octal (0177.0.0.1), hex (0x7f000001), and short forms (127.1)."""
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    try:
+        return ipaddress.ip_address(socket.inet_aton(host))
+    except (OSError, ValueError):
+        return None
 
 
 def validate_url(raw: str) -> str:
@@ -32,12 +47,14 @@ def validate_url(raw: str) -> str:
     host = parts.hostname.lower()
     if host in _BLOCKED_HOSTS:
         raise InvalidURLError("host is not allowed")
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
+    ip = _host_as_ip(host)
     if ip is not None and (
-        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
     ):
         raise InvalidURLError("IP-literal hosts in private/reserved ranges are not allowed")
     return url

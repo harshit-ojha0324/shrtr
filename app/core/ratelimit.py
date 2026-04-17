@@ -3,11 +3,12 @@
 Why Lua: GET-compute-SET from app code is a check-then-act race -- two concurrent
 requests can both see the last token. The script executes atomically inside Redis.
 """
+import math
 import time
 from dataclasses import dataclass
 
 from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from redis.exceptions import NoScriptError
 
 TOKEN_BUCKET_LUA = """
 local key      = KEYS[1]
@@ -82,25 +83,24 @@ class RateLimiter:
         """Raises RedisError when Redis is unavailable -- caller chooses the
         fail-open / fail-closed policy (see api/deps.py)."""
         now_ms = int(time.time() * 1000)
+        # guard misconfigured keys: refill <= 0 would break the Lua PEXPIRE
+        # math and the retry-after division below
+        refill_per_s = max(refill_per_s, 1e-6)
         args = [capacity, refill_per_s, now_ms, cost]
         key = f"rl:{key_id}"
         if self._sha is None:
             await self.load()
         try:
             res = await self.redis.evalsha(self._sha, 1, key, *args)
-        except RedisError as exc:
-            # NOSCRIPT after redis restart -> reload once
-            if "NOSCRIPT" in str(exc):
-                await self.load()
-                res = await self.redis.evalsha(self._sha, 1, key, *args)
-            else:
-                raise
+        except NoScriptError:
+            # redis restart flushed the script cache -> reload once
+            # (must catch the exception type: redis-py strips the NOSCRIPT
+            # prefix from the message, so string-matching never fires)
+            await self.load()
+            res = await self.redis.evalsha(self._sha, 1, key, *args)
         allowed = bool(int(res[0]))
         remaining = float(res[1])
-        retry_after = 0 if allowed else max(1, int((cost - remaining) / refill_per_s + 0.999))
+        retry_after = 0 if allowed else max(1, math.ceil((cost - remaining) / refill_per_s))
         return RateDecision(
-            allowed=allowed,
-            remaining=remaining,
-            capacity=capacity,
-            retry_after_s=retry_after,
+            allowed=allowed, remaining=remaining, capacity=capacity, retry_after_s=retry_after
         )

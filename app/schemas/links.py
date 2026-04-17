@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,6 +21,19 @@ class LinkCreate(BaseModel):
     def _check_alias(cls, v: str | None) -> str | None:
         if v is not None and not is_valid_alias(v):
             raise ValueError("alias must match ^[A-Za-z0-9_-]{4,12}$ and not be a reserved word")
+        return v
+
+    @field_validator("expires_at")
+    @classmethod
+    def _check_expiry(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return v
+        if v.tzinfo is None:
+            # naive datetimes would be silently reinterpreted as UTC by the DB,
+            # shifting the expiry by the client's UTC offset
+            raise ValueError("expires_at must include a timezone offset, e.g. 2026-01-01T00:00:00Z")
+        if v <= datetime.now(timezone.utc):
+            raise ValueError("expires_at is in the past")
         return v
 
 

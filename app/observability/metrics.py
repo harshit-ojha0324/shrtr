@@ -25,11 +25,15 @@ async def latency_middleware(request: Request, call_next):
         status = str(response.status_code)
         return response
     except Exception:
-        route = getattr(request.scope.get("route"), "path", request.url.path)
-        API_ERRORS.labels(route=route).inc()
+        API_ERRORS.labels(route=_route_label(request)).inc()
         raise
     finally:
-        route = getattr(request.scope.get("route"), "path", request.url.path)
-        REQUEST_LATENCY.labels(route=route, method=request.method, status=status).observe(
+        REQUEST_LATENCY.labels(route=_route_label(request), method=request.method, status=status).observe(
             time.perf_counter() - start
         )
+
+
+def _route_label(request: Request) -> str:
+    # never fall back to the raw URL path: every scanner probe would mint a
+    # new label value and blow up Prometheus cardinality
+    return getattr(request.scope.get("route"), "path", "unmatched")

@@ -7,6 +7,7 @@
 - XFetch probabilistic early refresh: stretch, not implemented (see docs/decisions.md)
 """
 import random
+from datetime import datetime, timezone
 
 from redis.asyncio import Redis
 
@@ -28,8 +29,15 @@ class LinkCache:
     async def get_url(self, code: str) -> str | None:
         return await self.redis.get(LINK_KEY.format(code=code))
 
-    async def set_url(self, code: str, url: str) -> None:
+    async def set_url(self, code: str, url: str, expires_at: datetime | None = None) -> None:
+        """Cache a redirect. TTL is clamped to the link's remaining lifetime so an
+        expiring link can never keep redirecting from cache past expires_at."""
         ttl = ttl_with_jitter(self.settings.cache_ttl_seconds, self.settings.cache_jitter_seconds)
+        if expires_at is not None:
+            remaining = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+            if remaining <= 1:
+                return  # about to expire: not worth caching
+            ttl = min(ttl, remaining)
         await self.redis.set(LINK_KEY.format(code=code), url, ex=ttl)
 
     async def is_negative_cached(self, code: str) -> bool:

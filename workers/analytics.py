@@ -75,6 +75,8 @@ class AnalyticsWorker:
         await self.redis.xadd(
             self.settings.dlq_key,
             {"original_id": entry_id, "reason": reason, **{k: str(v) for k, v in fields.items()}},
+            maxlen=self.settings.dlq_maxlen,  # bounded: a poison flood can't grow Redis forever
+            approximate=True,
         )
         await self.redis.xack(self.settings.stream_key, self.settings.stream_group, entry_id)
         EVENTS_DLQ.inc()

@@ -66,9 +66,19 @@ def test_delete_stops_redirects(client):
     assert client.get(f"/{code}", follow_redirects=False).status_code == 404
 
 
+def _negative_cache_hits(client) -> float:
+    for line in client.get("/metrics").text.splitlines():
+        if line.startswith('cache_ops_total{result="negative"}'):
+            return float(line.split()[-1])
+    return 0.0
+
+
 def test_unknown_code_404_and_negative_cache(client):
     assert client.get("/zzzzzz9", follow_redirects=False).status_code == 404
-    assert client.get("/zzzzzz9", follow_redirects=False).status_code == 404  # served by negative cache
+    before = _negative_cache_hits(client)
+    assert client.get("/zzzzzz9", follow_redirects=False).status_code == 404
+    # prove the second 404 was served by the negative cache, not another DB miss
+    assert _negative_cache_hits(client) >= before + 1
 
 
 def test_auth_required(client):
