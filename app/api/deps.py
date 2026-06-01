@@ -7,7 +7,7 @@ Rate-limit failure policy when Redis is down (deliberate, documented):
 import hashlib
 import time
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request, Response
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,9 @@ async def require_api_key(
     return row
 
 
-async def rate_limit(request: Request, api_key: ApiKey = Depends(require_api_key)) -> ApiKey:
+async def rate_limit(
+    request: Request, response: Response, api_key: ApiKey = Depends(require_api_key)
+) -> ApiKey:
     limiter = request.app.state.rate_limiter
     try:
         decision = await limiter.take(api_key.id, api_key.rate_capacity, api_key.refill_per_s)
@@ -60,5 +62,5 @@ async def rate_limit(request: Request, api_key: ApiKey = Depends(require_api_key
     if not decision.allowed:
         headers["Retry-After"] = str(decision.retry_after_s)
         raise HTTPException(status_code=429, detail="rate limit exceeded", headers=headers)
-    request.state.rate_headers = headers
+    response.headers.update(headers)  # FastAPI merges dependency headers into the reply
     return api_key

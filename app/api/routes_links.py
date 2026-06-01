@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -27,16 +27,10 @@ def _to_out(link: Link, base_url: str) -> LinkOut:
     )
 
 
-def _apply_rate_headers(request: Request, response: Response) -> None:
-    for k, v in getattr(request.state, "rate_headers", {}).items():
-        response.headers[k] = v
-
-
 @router.post("", status_code=201, response_model=LinkOut)
 async def create_link(
     body: LinkCreate,
     request: Request,
-    response: Response,
     api_key: ApiKey = Depends(rate_limit),
     session: AsyncSession = Depends(get_session),
 ):
@@ -71,14 +65,12 @@ async def create_link(
         await session.refresh(link)  # load server-generated created_at
     # warm the cache and drop any negative entry a previous miss left behind
     await request.app.state.link_cache.publish(link.short_code, link.long_url, link.expires_at)
-    _apply_rate_headers(request, response)
     return _to_out(link, settings.base_url)
 
 
 @router.get("", response_model=list[LinkOut])
 async def list_links(
     request: Request,
-    response: Response,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     api_key: ApiKey = Depends(rate_limit),
@@ -94,7 +86,6 @@ async def list_links(
             .offset(offset)
         )
     ).scalars().all()
-    _apply_rate_headers(request, response)
     return [_to_out(r, request.app.state.settings.base_url) for r in rows]
 
 
@@ -113,12 +104,10 @@ async def _owned_link(session: AsyncSession, api_key: ApiKey, code: str) -> Link
 async def get_link(
     code: str,
     request: Request,
-    response: Response,
     api_key: ApiKey = Depends(rate_limit),
     session: AsyncSession = Depends(get_session),
 ):
     link = await _owned_link(session, api_key, code)
-    _apply_rate_headers(request, response)
     return _to_out(link, request.app.state.settings.base_url)
 
 
@@ -126,7 +115,6 @@ async def get_link(
 async def delete_link(
     code: str,
     request: Request,
-    response: Response,
     api_key: ApiKey = Depends(rate_limit),
     session: AsyncSession = Depends(get_session),
 ):
@@ -134,14 +122,11 @@ async def delete_link(
     link.is_active = False
     await session.commit()
     await request.app.state.link_cache.tombstone(code)
-    _apply_rate_headers(request, response)
 
 
 @router.get("/{code}/stats", response_model=StatsOut)
 async def link_stats(
     code: str,
-    request: Request,
-    response: Response,
     granularity: str = Query(default="hour", pattern="^(hour|day)$"),
     frm: AwareDatetime | None = Query(default=None, alias="from"),  # naive = ambiguous -> 422
     to: AwareDatetime | None = Query(default=None),
@@ -163,7 +148,6 @@ async def link_stats(
         )
     ).all()
     series = [StatsPoint(bucket_start=b, clicks=c) for b, c in rows]
-    _apply_rate_headers(request, response)
     return StatsOut(
         short_code=code,
         granularity=granularity,
