@@ -183,6 +183,21 @@ def test_rate_limit_burst_429(stack):
     assert r.headers["X-RateLimit-Remaining"] == "0"
 
 
+def test_delete_beats_racing_stale_cache_write(stack):
+    client, _, _, _, _ = stack
+    code = client.post("/api/v1/links", json={"long_url": "https://example.com/r"}, headers=HEADERS).json()[
+        "short_code"
+    ]
+    assert client.delete(f"/api/v1/links/{code}", headers=HEADERS).status_code == 204
+    # a redirect that read the still-active row just before the delete commits
+    # finishes its cache fill AFTER the delete's invalidate
+    run(client.app.state.link_cache.set_url(code, "https://example.com/r"))
+    assert client.get(f"/{code}", follow_redirects=False).status_code == 404
+    # and the tombstone outlives any positive TTL that write could have had
+    s = get_settings()
+    assert run(client.app.state.redis.ttl(f"404:{code}")) > s.cache_ttl_seconds
+
+
 def test_negative_limit_is_422_not_500(stack):
     client, _, _, _, _ = stack
     # PostgreSQL rejects LIMIT -1 (SQLite silently allows it), so validate at the edge

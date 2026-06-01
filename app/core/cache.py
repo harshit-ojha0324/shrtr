@@ -2,7 +2,7 @@
 
 - positive cache:  link:{code} -> long_url, TTL = base + uniform jitter
   (jitter de-synchronizes expiries so a batch of keys never stampedes together)
-- negative cache:  404:{code} -> "1", short TTL
+- negative cache:  404:{code} -> "1", short TTL (deletes: long-lived tombstone)
   (stops typo/scanner misses from hammering PostgreSQL)
 - XFetch probabilistic early refresh: stretch, not implemented (see docs/decisions.md)
 """
@@ -26,8 +26,12 @@ class LinkCache:
         self.redis = redis
         self.settings = settings
 
-    async def get_url(self, code: str) -> str | None:
-        return await self.redis.get(LINK_KEY.format(code=code))
+    async def lookup(self, code: str) -> tuple[str | None, bool]:
+        """(cached url, negative-cached?) in one round trip. Callers must let the
+        negative entry win: a redirect that read the DB just before a delete can
+        still write a stale positive entry after the delete's invalidate."""
+        url, neg = await self.redis.mget(LINK_KEY.format(code=code), NEG_KEY.format(code=code))
+        return url, neg is not None
 
     async def set_url(self, code: str, url: str, expires_at: datetime | None = None) -> None:
         """Cache a redirect. TTL is clamped to the link's remaining lifetime so an
@@ -40,11 +44,15 @@ class LinkCache:
             ttl = min(ttl, remaining)
         await self.redis.set(LINK_KEY.format(code=code), url, ex=ttl)
 
-    async def is_negative_cached(self, code: str) -> bool:
-        return await self.redis.get(NEG_KEY.format(code=code)) is not None
+    async def set_negative(self, code: str, ttl: int | None = None) -> None:
+        ttl = ttl or self.settings.negative_cache_ttl_seconds
+        await self.redis.set(NEG_KEY.format(code=code), "1", ex=ttl)
 
-    async def set_negative(self, code: str) -> None:
-        await self.redis.set(NEG_KEY.format(code=code), "1", ex=self.settings.negative_cache_ttl_seconds)
+    async def tombstone(self, code: str) -> None:
+        """On delete: a negative entry that outlives any positive entry a racing
+        redirect could still write (max positive TTL = base + jitter)."""
+        await self.invalidate(code)
+        await self.set_negative(code, self.settings.cache_ttl_seconds + self.settings.cache_jitter_seconds)
 
     async def invalidate(self, code: str) -> None:
         """On delete: drop positive entry. On create: drop stale negative entry."""

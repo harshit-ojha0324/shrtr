@@ -50,13 +50,13 @@ async def redirect(request: Request, background: BackgroundTasks, code: str):
     cache = app.state.link_cache
     settings = app.state.settings
 
-    url = await cache.get_url(code)
+    url, negative = await cache.lookup(code)
+    if negative:  # checked first: wins over a stale positive entry (see LinkCache.lookup)
+        CACHE_OPS.labels(result="negative").inc()
+        raise HTTPException(status_code=404)
     if url is not None:
         CACHE_OPS.labels(result="hit").inc()
     else:
-        if await cache.is_negative_cached(code):
-            CACHE_OPS.labels(result="negative").inc()
-            raise HTTPException(status_code=404)
         CACHE_OPS.labels(result="miss").inc()
         async with app.state.sessionmaker() as session:
             row = (
