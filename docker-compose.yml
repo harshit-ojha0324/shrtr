@@ -8,6 +8,8 @@ x-app-env: &app-env
   # optional: deterministic demo key for `make seed` (see .env.example)
   SEED_API_KEY: ${SEED_API_KEY:-}
 
+# Postgres (default password), Redis (no auth) and Grafana (anonymous Admin) are
+# bound to localhost only: never expose them to the LAN.
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,7 +17,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-shrtr}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shrtr}
       POSTGRES_DB: ${POSTGRES_DB:-shrtr}
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shrtr}"]
@@ -25,7 +27,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -65,14 +67,14 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.53.0
-    ports: ["9090:9090"]
+    ports: ["127.0.0.1:9090:9090"]
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on: [api]
 
   grafana:
     image: grafana/grafana:11.1.0
-    ports: ["3000:3000"]
+    ports: ["127.0.0.1:3000:3000"]
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
