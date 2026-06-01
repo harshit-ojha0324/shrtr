@@ -17,10 +17,6 @@ LINK_KEY = "link:{code}"
 NEG_KEY = "404:{code}"
 
 
-def ttl_with_jitter(base: int, jitter: int) -> int:
-    return base + random.randint(0, jitter)
-
-
 class LinkCache:
     def __init__(self, redis: Redis, settings: Settings):
         self.redis = redis
@@ -39,7 +35,7 @@ class LinkCache:
     async def set_url(self, code: str, url: str, expires_at: datetime | None = None) -> None:
         """Cache a redirect. TTL is clamped to the link's remaining lifetime so an
         expiring link can never keep redirecting from cache past expires_at."""
-        ttl = ttl_with_jitter(self.settings.cache_ttl_seconds, self.settings.cache_jitter_seconds)
+        ttl = self.settings.cache_ttl_seconds + random.randint(0, self.settings.cache_jitter_seconds)
         if expires_at is not None:
             remaining = int((expires_at - datetime.now(timezone.utc)).total_seconds())
             if remaining <= 1:

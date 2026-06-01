@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, rate_limit
 from app.models import ApiKey, ClickRollupDaily, ClickRollupHourly, Link
-from app.schemas import LinkCreate, LinkOut, StatsOut, StatsPoint
+from app.schemas.links import LinkCreate, LinkOut, StatsOut, StatsPoint
 from app.services.codegen import generate_code
 
 router = APIRouter(prefix="/api/v1/links", tags=["links"])
