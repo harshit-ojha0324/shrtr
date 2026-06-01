@@ -14,13 +14,11 @@ from app.config import Settings
 from app.observability.metrics import CLICKS_DROPPED, CLICKS_PUBLISHED
 
 
-async def emit_click(
-    redis: Redis, settings: Settings, code: str, ua_hash: str = "", referrer: str = ""
-) -> None:
+async def emit_click(redis: Redis, settings: Settings, code: str) -> None:
     try:
         await redis.xadd(
             settings.stream_key,
-            {"code": code, "ts": str(int(time.time() * 1000)), "ua": ua_hash, "ref": referrer[:256]},
+            {"code": code, "ts": str(int(time.time() * 1000))},
             maxlen=settings.stream_maxlen,
             approximate=True,
         )
