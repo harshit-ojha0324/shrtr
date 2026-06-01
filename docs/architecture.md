@@ -26,5 +26,5 @@ This ASCII version is the quick terminal reference.
    │ processed_events   │      │  commit, then XACK; DLQ  │
    └────────────────────┘      └──────────────────────────┘
 
-   Prometheus scrapes api:8000/metrics and worker:9100 → Grafana "shrtr" dashboard
+   Prometheus scrapes api:8000/metrics and every worker replica's :9100 (DNS SD) → Grafana "shrtr" dashboard
 ```
