@@ -44,10 +44,11 @@ hot keys early with probability rising near expiry: refresh if
   means a >2-day gap in running it leaves days that only appear in hourly rollups.
 - In-process API-key cache (60s TTL) means a revoked key works up to 60s per API replica.
 - Chaos tests are described but not yet scripted (`to build`).
-- Cache-aside has unlocked write/invalidate races: a redirect miss that overlaps a DELETE can
-  re-fill the positive cache after the tombstone (stale redirect until TTL), and one that
-  overlaps a create can leave a negative entry for up to 5 minutes. Closing this properly needs
-  versioned keys or delayed double-delete; accepted at this scale and disclosed here.
+- Cache-aside write/invalidate races: a redirect miss that overlaps a DELETE can still re-fill
+  the positive cache after the delete, but it can no longer redirect: the redirect reads both
+  keys in one MGET and the negative entry wins, and DELETE writes a tombstone that outlives any
+  positive TTL (base + jitter). Still open: a miss that overlaps a create can leave a negative
+  entry for up to 5 minutes (new link 404s briefly); accepted at this scale.
 - The rate limiter trusts the app server's wall clock (`now_ms` argument). Multi-node skew
   could mint tokens; single-writer Redis TIME inside the Lua script would remove that.
 - `stream_maxlen` trimming is a backstop: if consumers are down long enough for 1M events to
