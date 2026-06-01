@@ -128,7 +128,10 @@ are negative-cached so typo/scanner traffic can't hammer PostgreSQL.
 3. **Commit, then `XACK`.** A crash between the two causes redelivery;
    the ledger absorbs it.
 4. A janitor pass `XAUTOCLAIM`s entries idle >60s from dead consumers;
-   entries delivered >5 times go to `clicks:dlq` (bounded).
+   unparseable events go to `clicks:dlq` (bounded). A batch that fails
+   while PostgreSQL is up is retried event by event and only events that
+   fail alone are dead-lettered; during an outage nothing is, entries
+   just stay pending.
 
 At-least-once delivery + idempotent processing = **effectively-once
 counting**. I say it that way deliberately — "exactly-once delivery"

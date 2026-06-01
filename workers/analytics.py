@@ -5,8 +5,11 @@ Guarantees:
 - idempotent processing via the processed_events ledger
 - DB transaction COMMITS BEFORE XACK -> crash between the two causes a
   redelivery that the ledger absorbs (effectively-once counting)
-- poison events: parse failures and entries delivered > MAX_DELIVERIES go to
-  the DLQ stream (clicks:dlq) and are acked away
+- poison events go to the DLQ stream (clicks:dlq) and are acked away:
+  parse failures immediately; and when a batch fails while PostgreSQL is
+  reachable, it is retried one event at a time and only events that fail
+  alone are dead-lettered. While PostgreSQL is down, nothing is dead-lettered:
+  entries stay pending (delivery counts would only measure the outage)
 
 Run: python -m workers.analytics  (WORKER_NAME env distinguishes consumers)
 """
@@ -20,7 +23,7 @@ from datetime import datetime, timezone
 from prometheus_client import Counter, Gauge, start_http_server
 from redis.asyncio import Redis
 from redis.exceptions import RedisError, ResponseError
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.db.session import make_engine, make_sessionmaker
@@ -81,18 +84,46 @@ class AnalyticsWorker:
         await self.redis.xack(self.settings.stream_key, self.settings.stream_group, entry_id)
         EVENTS_DLQ.inc()
 
+    async def db_reachable(self) -> bool:
+        try:
+            async with self.engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
     async def process_batch(self, entries: list[tuple[str, dict]]) -> None:
-        """One DB transaction for the whole batch; XACK only after commit."""
-        parsed: list[tuple[str, str, int]] = []  # (entry_id, code, ts_ms)
+        parsed: list[tuple[str, dict, str, datetime]] = []  # (entry_id, fields, code, hour bucket)
         for entry_id, fields in entries:
             try:
-                parsed.append((entry_id, fields["code"], int(fields["ts"])))
-            except (KeyError, ValueError):
+                parsed.append((entry_id, fields, fields["code"], hour_floor(int(fields["ts"]))))
+            except (KeyError, ValueError, OverflowError, OSError):  # OverflowError/OSError: absurd ts
                 await self.dlq(entry_id, fields, "parse_error")
         if not parsed:
             return
+        try:
+            await self.count(parsed)
+        except RedisError:
+            raise
+        except Exception:
+            if not await self.db_reachable():
+                raise  # outage: leave everything pending, retry later
+            # DB is up, so something in the batch is bad: isolate it so one poison
+            # event can't hold back (or drag into the DLQ) the good ones
+            log.exception("batch failed with PostgreSQL reachable; retrying events one by one")
+            for p in parsed:
+                try:
+                    await self.count([p])
+                except RedisError:
+                    raise
+                except Exception:
+                    if not await self.db_reachable():
+                        raise
+                    await self.dlq(p[0], p[1], "processing_error")
 
-        ack_ids = [eid for eid, _, _ in parsed]
+    async def count(self, parsed: list[tuple[str, dict, str, datetime]]) -> None:
+        """One DB transaction for the whole batch; XACK only after commit."""
+        ack_ids = [p[0] for p in parsed]
         async with self.sessions() as session:
             async with session.begin():
                 stmt = (
@@ -105,14 +136,14 @@ class AnalyticsWorker:
                 EVENTS_DUPLICATE.inc(len(ack_ids) - len(new_ids))
 
                 buckets: CCounter = CCounter()
-                for eid, code, ts_ms in parsed:
+                for eid, _, code, bucket in parsed:
                     if eid not in new_ids:
                         continue
                     link_id = await self.resolve_link_id(session, code)
                     if link_id is None:
                         EVENTS_SKIPPED.inc()
                         continue
-                    buckets[(link_id, hour_floor(ts_ms))] += 1
+                    buckets[(link_id, bucket)] += 1
 
                 if buckets:
                     rows = [
@@ -128,12 +159,13 @@ class AnalyticsWorker:
             # transaction committed here
 
         await self.redis.xack(self.settings.stream_key, self.settings.stream_group, *ack_ids)
-        EVENTS_PROCESSED.inc(sum(buckets.values()) if parsed else 0)
+        EVENTS_PROCESSED.inc(sum(buckets.values()))
         BATCHES.inc()
 
     async def reclaim_stalled(self) -> list[tuple[str, dict]]:
         """XAUTOCLAIM entries idle > min_idle from crashed/slow consumers.
-        Entries delivered more than max_deliveries times go to the DLQ."""
+        No delivery-count DLQ: during a DB outage every entry's count climbs,
+        so it can't tell poison from outage (process_batch isolates poison)."""
         try:
             res = await self.redis.xautoclaim(
                 self.settings.stream_key,
@@ -145,22 +177,7 @@ class AnalyticsWorker:
             )
         except ResponseError:
             return []
-        claimed = res[1] if len(res) >= 2 else []
-        if not claimed:
-            return []
-        # check delivery counts for poison detection
-        keep: list[tuple[str, dict]] = []
-        pending = await self.redis.xpending_range(
-            self.settings.stream_key, self.settings.stream_group,
-            min=claimed[0][0], max=claimed[-1][0], count=len(claimed),
-        )
-        deliveries = {p["message_id"]: p["times_delivered"] for p in pending}
-        for entry_id, fields in claimed:
-            if deliveries.get(entry_id, 0) > self.settings.worker_max_deliveries:
-                await self.dlq(entry_id, fields, "max_deliveries_exceeded")
-            else:
-                keep.append((entry_id, fields))
-        return keep
+        return res[1] if len(res) >= 2 else []
 
     async def update_lag_gauge(self) -> None:
         try:
