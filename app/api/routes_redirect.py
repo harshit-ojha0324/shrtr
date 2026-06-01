@@ -1,7 +1,8 @@
 """The redirect hot path.
 
 Cache hit: 1 Redis GET + 1 background XADD, no DB session at all.
-Cache miss: single point-read on the unique short_code index, then cache fill.
+Cache miss: per-IP token bucket, then a single point-read on the unique
+short_code index, then cache fill.
 302 (not 301) so browsers/CDNs don't cache us out of our own analytics;
 Cache-Control bounds the load tradeoff.
 """
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from redis.exceptions import RedisError
 from sqlalchemy import select
 
 from app.core.events import emit_click
@@ -37,6 +39,18 @@ async def redirect(request: Request, background: BackgroundTasks, code: str):
         CACHE_OPS.labels(result="hit").inc()
     else:
         CACHE_OPS.labels(result="miss").inc()
+        # misses are what cost a DB read (+ a negative key): cap them per client IP
+        # so random-code scans can't hammer PostgreSQL. Hits stay one Redis call.
+        # Behind a proxy, run uvicorn with --proxy-headers so client.host is real.
+        ip = request.client.host if request.client else "unknown"
+        try:
+            d = await app.state.rate_limiter.take(
+                f"ip:{ip}", settings.redirect_miss_capacity, settings.redirect_miss_refill_per_s
+            )
+        except RedisError:
+            d = None  # fail open: redirects are reads (same policy as api/deps.py)
+        if d is not None and not d.allowed:
+            raise HTTPException(status_code=429, headers={"Retry-After": str(d.retry_after_s)})
         async with app.state.sessionmaker() as session:
             row = (
                 await session.execute(select(Link).where(Link.short_code == code))

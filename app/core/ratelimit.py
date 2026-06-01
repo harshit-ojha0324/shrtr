@@ -79,7 +79,9 @@ class RateLimiter:
     async def load(self) -> None:
         self._sha = await self.redis.script_load(TOKEN_BUCKET_LUA)
 
-    async def take(self, key_id: int, capacity: int, refill_per_s: float, cost: float = 1.0) -> RateDecision:
+    async def take(
+        self, key_id: int | str, capacity: int, refill_per_s: float, cost: float = 1.0
+    ) -> RateDecision:
         """Raises RedisError when Redis is unavailable -- caller chooses the
         fail-open / fail-closed policy (see api/deps.py)."""
         now_ms = int(time.time() * 1000)

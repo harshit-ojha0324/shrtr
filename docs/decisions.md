@@ -50,6 +50,9 @@ hot keys early with probability rising near expiry: refresh if
   one MGET and the negative entry wins; DELETE writes a tombstone that outlives any positive TTL;
   CREATE warms the positive entry before dropping the negative one, and a redirect miss only
   writes its negative entry (atomically, Lua) when no positive entry exists.
+- Redirect cache misses are limited per client IP (1000 burst, 50/s refill; hits are never
+  limited). Users behind one NAT share a bucket, and behind a reverse proxy uvicorn needs
+  `--proxy-headers` or every client looks like the proxy. Redis down -> fail open.
 - The rate limiter trusts the app server's wall clock (`now_ms` argument). Multi-node skew
   could mint tokens; single-writer Redis TIME inside the Lua script would remove that.
 - `stream_maxlen` trimming is a backstop: if consumers are down long enough for 1M events to

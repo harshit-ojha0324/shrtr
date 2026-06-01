@@ -256,6 +256,21 @@ def test_rate_limit_burst_429(stack):
     assert r.headers["X-RateLimit-Remaining"] == "0"
 
 
+def test_redirect_misses_are_rate_limited_per_ip(stack):
+    client, _, _, _, sql_counter = stack
+    app = client.app
+    app.state.settings = app.state.settings.model_copy(
+        update={"redirect_miss_capacity": 3, "redirect_miss_refill_per_s": 0.01}
+    )
+    # a scanner probing random codes: each is a miss (DB read) until the bucket runs dry
+    statuses = [client.get(f"/scan{i:03d}", follow_redirects=False).status_code for i in range(5)]
+    assert statuses == [404, 404, 404, 429, 429]
+    before = sql_counter["selects"]
+    r = client.get("/scan999", follow_redirects=False)
+    assert r.status_code == 429 and "retry-after" in r.headers
+    assert sql_counter["selects"] == before, "throttled misses must not reach PostgreSQL"
+
+
 def test_create_beats_racing_negative_cache_write(stack):
     client, _, _, _, _ = stack
     code = client.post("/api/v1/links", json={"long_url": "https://example.com/c"}, headers=HEADERS).json()[
