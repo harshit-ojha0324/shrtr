@@ -8,7 +8,6 @@ import time
 from dataclasses import dataclass
 
 from redis.asyncio import Redis
-from redis.exceptions import NoScriptError
 
 TOKEN_BUCKET_LUA = """
 local key      = KEYS[1]
@@ -73,11 +72,9 @@ class RateDecision:
 
 class RateLimiter:
     def __init__(self, redis: Redis):
-        self.redis = redis
-        self._sha: str | None = None
-
-    async def load(self) -> None:
-        self._sha = await self.redis.script_load(TOKEN_BUCKET_LUA)
+        # redis-py's Script runs EVALSHA and, on NoScriptError (Redis restart
+        # flushed the script cache), reloads and retries once
+        self._take = redis.register_script(TOKEN_BUCKET_LUA)
 
     async def take(
         self, key_id: int | str, capacity: int, refill_per_s: float, cost: float = 1.0
@@ -89,17 +86,7 @@ class RateLimiter:
         # math and the retry-after division below
         refill_per_s = max(refill_per_s, 1e-6)
         args = [capacity, refill_per_s, now_ms, cost]
-        key = f"rl:{key_id}"
-        if self._sha is None:
-            await self.load()
-        try:
-            res = await self.redis.evalsha(self._sha, 1, key, *args)
-        except NoScriptError:
-            # redis restart flushed the script cache -> reload once
-            # (must catch the exception type: redis-py strips the NOSCRIPT
-            # prefix from the message, so string-matching never fires)
-            await self.load()
-            res = await self.redis.evalsha(self._sha, 1, key, *args)
+        res = await self._take(keys=[f"rl:{key_id}"], args=args)
         allowed = bool(int(res[0]))
         remaining = float(res[1])
         retry_after = 0 if allowed else max(1, math.ceil((cost - remaining) / refill_per_s))

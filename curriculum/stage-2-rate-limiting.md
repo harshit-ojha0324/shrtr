@@ -31,7 +31,8 @@ at once: the algorithm, the distributed-correctness trap
 5. EVALSHA vs EVAL, the script cache, and the NOSCRIPT war story: the
    old code string-matched `"NOSCRIPT" in str(exc)` but redis-py strips
    that prefix — the recovery branch was dead code. Why catching
-   `NoScriptError` (a type) is the correct fix.
+   `NoScriptError` (a type) is the correct fix, and why the final code
+   just uses `redis.register_script` (read its `__call__`: it is that fix).
 6. Failure policy: reads fail OPEN, writes fail CLOSED (ADR-6). Why the
    asymmetry, and what "protect PostgreSQL" concretely means.
 7. Bucket-state TTL: why the Lua script PEXPIREs the hash, and what a
@@ -47,8 +48,8 @@ Move `app/core/ratelimit.py` aside; rewrite from this spec: Redis hash
 `rl:{key_id}` holding `tokens` and `ts`; a Lua script that refills
 lazily (`min(capacity, tokens + elapsed_s * refill)`), spends `cost` if
 available, PEXPIREs the state to ~2 full refills, and returns
-`{allowed, tokens}`; a pure-Python `compute_take` mirror; EVALSHA with
-`NoScriptError` reload; `Retry-After` computed with a real ceiling.
+`{allowed, tokens}`; a pure-Python `compute_take` mirror; EVALSHA with a
+`NoScriptError` reload (hand-roll it once, then swap in `register_script`); `Retry-After` computed with a real ceiling.
 Grade: `make test` — the frozen-clock unit tests must pass unmodified.
 
 ### Lab 2.2 — Race demonstration (do-together)

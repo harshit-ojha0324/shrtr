@@ -147,7 +147,8 @@ re-verified — the full list with mechanisms is in
 - **The rate limiter's Redis-restart recovery was dead code.** I matched
   `"NOSCRIPT" in str(exc)`, but redis-py strips that prefix from the
   message — so after any Redis restart, writes would 503 forever. Fixed
-  by catching `NoScriptError`, then proven with a live restart drill.
+  by catching `NoScriptError`, proven with a live restart drill, and
+  later simplified to redis-py's `register_script`, which does the same.
 - **`uvicorn --workers 2` silently corrupted every metric** —
   `prometheus_client` registries are per-process, so `/metrics`
   alternated between two half-counters. I caught it because the k6

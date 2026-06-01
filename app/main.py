@@ -34,10 +34,6 @@ def create_app() -> FastAPI:
         )
         app.state.link_cache = LinkCache(app.state.redis, settings)
         app.state.rate_limiter = RateLimiter(app.state.redis)
-        try:
-            await app.state.rate_limiter.load()
-        except Exception:
-            pass  # lazy-loaded on first use if Redis wasn't up yet
         yield
         await app.state.redis.aclose()
         await app.state.engine.dispose()
