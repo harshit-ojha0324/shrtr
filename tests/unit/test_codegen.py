@@ -19,5 +19,6 @@ def test_alias_rules():
     assert not is_valid_alias("ab")            # too short
     assert not is_valid_alias("x" * 13)        # too long
     assert not is_valid_alias("has space")
+    assert not is_valid_alias("abcd\n")        # re.match + $ would accept this
     assert not is_valid_alias("api")           # reserved
     assert not is_valid_alias("metrics")       # reserved

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.core.events import emit_click
 from app.models import Link
 from app.observability.metrics import CACHE_OPS
-from app.services.codegen import ALIAS_RE, RESERVED
+from app.services.codegen import is_valid_alias
 
 router = APIRouter(tags=["redirect"])
 
@@ -25,7 +25,7 @@ router = APIRouter(tags=["redirect"])
 async def redirect(request: Request, background: BackgroundTasks, code: str):
     # validate in the handler, not via Path(...): malformed codes (favicon.ico,
     # scanner probes) should get a plain 404, not a 422 echoing pydantic internals
-    if not ALIAS_RE.fullmatch(code) or code.lower() in RESERVED:
+    if not is_valid_alias(code):
         raise HTTPException(status_code=404)
     app = request.app
     cache = app.state.link_cache
