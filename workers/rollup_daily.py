@@ -1,10 +1,10 @@
-"""Daily rollup + retention job (one-shot; run via `make rollup` or cron).
+"""Daily rollup + retention job (one-shot; the `rollup` compose service runs it hourly).
 
 1. Aggregates hourly rollups into click_rollups_daily (idempotent upsert).
 2. Purges processed_events older than 48h (the stream is trimmed to ~1M entries,
    so older entry IDs can never be redelivered).
 
-Scheduling this automatically (cron container / K8s CronJob) is a documented stretch.
+`make rollup` runs it once on demand.
 """
 import asyncio
 from datetime import datetime, timedelta, timezone

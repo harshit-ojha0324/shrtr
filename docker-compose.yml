@@ -65,6 +65,16 @@ services:
       redis: { condition: service_healthy }
     # scale with: docker compose up -d --scale worker=2
 
+  # Hourly daily-rollup + processed_events purge. Without it the idempotency ledger
+  # grows one row per click forever and `granularity=day` stats stay empty.
+  # ponytail: sleep loop, not cron; a K8s CronJob replaces it when k8s/ exists.
+  rollup:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    command: ["sh", "-c", "while true; do python -m workers.rollup_daily; sleep 3600; done"]
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   prometheus:
     image: prom/prometheus:v2.53.0
     ports: ["127.0.0.1:9090:9090"]

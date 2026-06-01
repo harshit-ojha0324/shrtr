@@ -199,7 +199,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 SEED_API_KEY=$KEY make itest                     # 6 integration tests vs the stack
 make seed-load && make load                      # the k6 benchmark
 docker compose up -d --scale worker=2            # two consumers in the group
-make rollup                                      # daily rollups + ledger purge
+make rollup                                      # daily rollups + ledger purge (also runs hourly in compose)
 ```
 
 <details>

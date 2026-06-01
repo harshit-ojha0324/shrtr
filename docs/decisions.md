@@ -40,8 +40,10 @@ hot keys early with probability rising near expiry: refresh if
 - DNS rebinding not checked in URL validation (we never server-side fetch targets, which is the
   main mitigation).
 - limit/offset pagination; keyset is `stretch`.
-- Daily rollup is manual (`make rollup`); scheduling is `stretch`, and its fixed 2-day window
-  means a >2-day gap in running it leaves days that only appear in hourly rollups.
+- Daily rollup + ledger purge run hourly from a `sleep 3600` loop in the `rollup` compose
+  service (a K8s CronJob would replace it). Its fixed 2-day window means a >2-day gap in
+  running it leaves days that only appear in hourly rollups. Hourly rollups are never pruned
+  (one row per link per active hour; small next to the per-click ledger it now purges).
 - In-process API-key cache (60s TTL) means a revoked key works up to 60s per API replica.
 - Chaos tests are described but not yet scripted (`to build`).
 - Cache-aside write/invalidate races: a redirect miss that overlaps a DELETE can still re-fill
