@@ -52,7 +52,7 @@ curl -s -X POST localhost:8000/api/v1/links -H "X-API-Key: $KEY" \
 **Expect:** your row is there. That's PostgreSQL persistence verified end-to-end.
 
 **Command (redirect, twice):** `curl -si localhost:8000/$CODE | head -5` (run it twice)
-**Expect:** `HTTP/1.1 302 Found`, `location: https://example.com/proof`, `cache-control: private, max-age=90` both times. First call is a cache miss (fills Redis), second is a hit.
+**Expect:** `HTTP/1.1 302 Found`, `location: https://example.com/proof`, `cache-control: private, max-age=90` both times. Both are cache hits: creating a link warms Redis (links seeded straight into Postgres, e.g. by `make seed`, miss once then fill).
 **Failure means:** 404 → wrong CODE; 500 → check Redis is healthy (known limitation: Redis fully down breaks the hot path).
 **Evidence:** supports "302 redirect hot path." To prove the cache-aside part at the Redis level:
 `docker compose exec redis redis-cli GET "link:$CODE"`

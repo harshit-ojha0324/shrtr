@@ -69,8 +69,8 @@ async def create_link(
         if link is None:
             raise HTTPException(status_code=500, detail="could not allocate a short code")
         await session.refresh(link)  # load server-generated created_at
-    # a previous miss may have negative-cached this code
-    await request.app.state.link_cache.invalidate(link.short_code)
+    # warm the cache and drop any negative entry a previous miss left behind
+    await request.app.state.link_cache.publish(link.short_code, link.long_url, link.expires_at)
     _apply_rate_headers(request, response)
     return _to_out(link, settings.base_url)
 

@@ -42,7 +42,7 @@ async def redirect(request: Request, background: BackgroundTasks, code: str):
                 await session.execute(select(Link).where(Link.short_code == code))
             ).scalar_one_or_none()
         if row is None or not row.is_redirectable(datetime.now(timezone.utc)):
-            await cache.set_negative(code)
+            await cache.set_negative_if_uncached(code)
             raise HTTPException(status_code=404)
         url = row.long_url
         await cache.set_url(code, url, expires_at=row.expires_at)

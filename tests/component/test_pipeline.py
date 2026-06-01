@@ -108,6 +108,8 @@ def test_full_pipeline_and_idempotency(stack):
         "short_code"
     ]
 
+    # create warms the cache; drop the entry so we exercise miss -> fill -> hit
+    run(redis.delete(f"link:{code}"))
     # redirect 3x: first is a cache miss (1 DB select), next two are pure cache hits
     assert client.get(f"/{code}", follow_redirects=False).status_code == 302
     selects_after_miss = sql_counter["selects"]
@@ -252,6 +254,17 @@ def test_rate_limit_burst_429(stack):
     assert r.status_code == 429
     assert "retry-after" in {k.lower() for k in r.headers}
     assert r.headers["X-RateLimit-Remaining"] == "0"
+
+
+def test_create_beats_racing_negative_cache_write(stack):
+    client, _, _, _, _ = stack
+    code = client.post("/api/v1/links", json={"long_url": "https://example.com/c"}, headers=HEADERS).json()[
+        "short_code"
+    ]
+    # a redirect miss that read the DB just BEFORE the create committed (row: None)
+    # finishes its negative-cache write AFTER the create's cache update
+    run(client.app.state.link_cache.set_negative_if_uncached(code))
+    assert client.get(f"/{code}", follow_redirects=False).status_code == 302
 
 
 def test_stats_rejects_naive_datetimes(stack):
