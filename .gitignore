@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+load/codes.json
+benchmarks/**/raw/
+.DS_Store
+
+# ---- personal / career files: never push these to a public repo ----
+# (career-pack/ matters if you `git init` from the parent folder instead of shrtr/)
+docs/resume-backend-rewrite.md
+career-pack/
+*resume*
+*Resume*
+*.docx
+verification.log

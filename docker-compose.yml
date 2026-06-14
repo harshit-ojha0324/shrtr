@@ -1,0 +1,82 @@
+name: shrtr
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://shrtr:shrtr@postgres:5432/shrtr
+  REDIS_URL: redis://redis:6379/0
+  BASE_URL: http://localhost:8000
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shrtr
+      POSTGRES_PASSWORD: shrtr
+      POSTGRES_DB: shrtr
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shrtr"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    command: alembic upgrade head
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    ports: ["8000:8000"]
+    environment: *app-env
+    volumes:
+      - ./load:/app/load   # lets `make seed` write codes.json back to the host
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    command: python -m workers.analytics
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    # scale with: docker compose up -d --scale worker=2
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:
