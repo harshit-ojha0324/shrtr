@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
 
     app.include_router(routes_health.router)
     app.include_router(routes_links.router)
+    app.include_router(routes_links.misc)
     # bare /{code} registered LAST so it can't shadow the routes above
     app.include_router(routes_redirect.router)
     return app

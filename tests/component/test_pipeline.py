@@ -143,6 +143,14 @@ def test_full_pipeline_and_idempotency(stack):
     stats = client.get(f"/api/v1/links/{code}/stats?granularity=hour", headers=HEADERS).json()
     assert stats["total_clicks"] == 3
 
+    # ...by day too, before the daily rollup job has run (recent days come from hourly)
+    daily = client.get(f"/api/v1/links/{code}/stats?granularity=day", headers=HEADERS).json()
+    assert daily["total_clicks"] == 3 and len(daily["series"]) == 1
+
+    # ...and in the one-query activity feed behind the web app's list
+    activity = client.get("/api/v1/activity", headers=HEADERS).json()
+    assert [p["clicks"] for p in activity[code]] == [3]
+
 
 def test_poison_event_goes_to_dlq(stack):
     client, redis, sessions, worker, _ = stack
@@ -340,3 +348,51 @@ def test_metrics_endpoint(stack):
         "clicks_published_total",
     ):
         assert series in body
+
+
+def test_preview_shows_destination_without_counting_a_click(stack):
+    client, redis, *_ = stack
+    code = client.post(
+        "/api/v1/links", json={"long_url": "http://example.com/<b>x</b>"}, headers=HEADERS
+    ).json()["short_code"]
+    r = client.get(f"/{code}+")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "&lt;b&gt;x&lt;/b&gt;" in r.text and "<b>x</b>" not in r.text  # escaped, not injected
+    assert "Not secure" in r.text  # plain http is flagged
+    assert f'href="/{code}"' in r.text  # continuing goes through the redirect, so it counts
+    assert run(redis.xlen("clicks")) == 0
+    assert client.get("/nope1234+").status_code == 404
+
+
+def test_bulk_reports_each_row_and_pays_per_row(stack):
+    client, *_ = stack
+    client.post("/api/v1/links", json={"long_url": "https://example.com", "custom_alias": "taken"},
+                headers=HEADERS)
+    r = client.post("/api/v1/links/bulk", headers=HEADERS, json={"links": [
+        {"long_url": "https://example.com/a"},
+        {"long_url": "ftp://example.com/b"},
+        {"long_url": "https://example.com/c", "custom_alias": "taken"},
+        {"long_url": "https://example.com/d", "custom_alias": "fresh-one"},
+    ]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body["created"], body["failed"]) == (2, 2)
+    assert [row["ok"] for row in body["results"]] == [True, False, False, True]
+    assert body["results"][2]["error"] == "alias already taken"
+    assert body["results"][3]["link"]["short_code"] == "fresh-one"
+    # 30-token bucket: 1 single create + 4 rows leaves ~25, not 28
+    assert int(r.headers["X-RateLimit-Remaining"]) <= 25
+    # more rows than the key's whole burst can never succeed: 422, not a 429 to retry
+    many = {"links": [{"long_url": "https://example.com"}] * 31}
+    assert client.post("/api/v1/links/bulk", headers=HEADERS, json=many).status_code == 422
+
+
+def test_alias_availability(stack):
+    client, *_ = stack
+    client.post("/api/v1/links", json={"long_url": "https://example.com", "custom_alias": "mine"},
+                headers=HEADERS)
+    check = lambda a: client.get(f"/api/v1/aliases/{a}", headers=HEADERS).json()  # noqa: E731
+    assert check("mine") == {"alias": "mine", "available": False, "reason": "already taken"}
+    assert check("free-alias")["available"] is True
+    assert check("api")["available"] is False
+    assert client.get("/api/v1/aliases/abcd", headers={"X-API-Key": "wrong"}).status_code == 401

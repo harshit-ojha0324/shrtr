@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -60,3 +61,27 @@ class StatsOut(BaseModel):
         "Counts are eventually consistent: events are aggregated asynchronously "
         "by stream workers (typically within seconds)."
     )
+
+
+class BulkIn(BaseModel):
+    # rows are validated one by one in the handler, so one bad row doesn't 422 the batch
+    links: list[dict[str, Any]] = Field(..., min_length=1, max_length=50)
+
+
+class BulkResult(BaseModel):
+    index: int
+    ok: bool
+    link: LinkOut | None = None
+    error: str | None = None
+
+
+class BulkOut(BaseModel):
+    created: int
+    failed: int
+    results: list[BulkResult]
+
+
+class AliasCheck(BaseModel):
+    alias: str
+    available: bool
+    reason: str | None = None
