@@ -1,6 +1,6 @@
 # shrtr — a rate-limited URL shortener with an async analytics pipeline
 
-[![CI](https://github.com/harshit-ojha0324/Rate-Limited-URL-Shortener-/actions/workflows/ci.yml/badge.svg)](https://github.com/harshit-ojha0324/Rate-Limited-URL-Shortener-/actions/workflows/ci.yml)
+[![CI](https://github.com/harshit-ojha0324/shrtr/actions/workflows/ci.yml/badge.svg)](https://github.com/harshit-ojha0324/shrtr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
