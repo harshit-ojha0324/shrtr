@@ -15,7 +15,10 @@ limit executed atomically in a single Redis **Lua** script; clicks flow
 through a **Redis Streams consumer group** into idempotent,
 effectively-once PostgreSQL rollups; and the whole thing is instrumented
 with Prometheus/Grafana and load-tested with k6. One command brings up
-the stack.
+the stack, including a web app for creating links and watching their
+clicks arrive.
+
+![The web app: every link with its 24h trend, the selected link's clicks, chart and QR code](docs/assets/web-app.png)
 
 ## The demo: 500 redirects/sec on my laptop, zero failures
 
@@ -95,6 +98,20 @@ are negative-cached so typo/scanner traffic can't hammer PostgreSQL.
 - `POST /api/v1/links` — create links (custom alias, optional expiry,
   timezone-validated), `GET /{code}` — 302 redirect, stats API with
   hourly/daily granularity. Interactive docs at `/docs`.
+- **Web app** (`frontend/`, React + Vite, served by nginx on :8080): every
+  link with its 24h sparkline, a link page with live KPIs, a 24h/30d chart
+  and a QR code, a composer with a live alias check and bulk paste, light
+  and dark themes. The whole list costs **one** request
+  (`GET /api/v1/activity`, a single grouped query), not one stats call per
+  link, so it fits inside the default rate limit.
+- **Bulk create** (`POST /api/v1/links/bulk`, up to 50, a result per row)
+  that pays **one token per row**, atomically, so batching isn't a way
+  around the limit. **Alias check** (`GET /api/v1/aliases/{alias}`).
+- **Link preview**: `/{code}+` shows where a link goes, with a warning for
+  plain http. Viewing isn't a click; its Continue button goes through
+  `/{code}`, so following the link is.
+- Random codes are 8 chars with no look-alikes (`0/O/o/1/l/I`), so a code
+  read off a printed QR label can be typed back; aliases are 3-32 chars.
 - **Token-bucket rate limiting per API key** in one atomic Redis Lua
   script (lazy refill, no background job), with `429` + `Retry-After` +
   `X-RateLimit-*` headers, a pure-Python reference implementation
@@ -112,11 +129,13 @@ are negative-cached so typo/scanner traffic can't hammer PostgreSQL.
 - **Observability**: latency histograms, cache hit/miss/negative ratios,
   rate-limit decisions, consumer lag, publish/process/drop counters —
   provisioned into a 7-panel Grafana dashboard.
-- **Three test tiers** (37 tests): unit (pure logic, frozen clocks),
+- **Three test tiers** (53 tests): unit (pure logic, frozen clocks),
   component (the full pipeline in one process — fakeredis-with-Lua +
   SQLite with dialect-aware upserts, including a SELECT counter that
   *proves* cache hits skip the DB), and integration (against the real
-  compose stack). CI runs lint + unit + component on every push.
+  compose stack). CI runs lint + unit + component, the web app's
+  type-check and build, and the integration suite against the full compose
+  stack on every push.
 
 ## Delivery semantics (the part interviewers ask about)
 
@@ -189,6 +208,8 @@ curl -i localhost:8000/<short_code>          # 302
 curl "localhost:8000/api/v1/links/<short_code>/stats?granularity=hour" -H "X-API-Key: $KEY"
 ```
 
+- Web app: http://localhost:8080 (paste the key under "API key") ·
+  `make web` for hot reload on :5173
 - Grafana: http://localhost:3000 (dashboard "shrtr") · Prometheus:
   http://localhost:9090 · API docs: http://localhost:8000/docs
 
@@ -196,8 +217,8 @@ Tests:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest tests/unit tests/component -q   # 40 tests, no Docker needed
-SEED_API_KEY=$KEY make itest                     # 6 integration tests vs the stack
+.venv/bin/pytest tests/unit tests/component -q   # 46 tests, no Docker needed
+SEED_API_KEY=$KEY make itest                     # 7 integration tests vs the stack
 make seed-load && make load                      # the k6 benchmark
 docker compose up -d --scale worker=2            # two consumers in the group
 make rollup                                      # daily rollups + ledger purge (also runs hourly in compose)
@@ -236,7 +257,7 @@ which removes the main SSRF consequence.
 
 ## Repo map
 
-`app/` FastAPI service (api routes; core: cache/ratelimit/events;
+`frontend/` React web app · `app/` FastAPI service (api routes; core: cache/ratelimit/events;
 models; schemas; observability) · `workers/` stream consumer + daily
 rollup · `migrations/` Alembic · `scripts/seed.py` · `tests/` unit +
 component + integration · `load/` k6 · `benchmarks/` committed runs ·

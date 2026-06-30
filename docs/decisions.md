@@ -21,8 +21,10 @@ processing. The ledger insert and the rollup upsert share one transaction, so a 
 entry can never be counted twice. Ledger is purged after 48h (stream IDs older than the trimmed
 stream cannot be redelivered).
 
-## ADR-5: random 7-char base62 codes + unique-index retry
-62^7 ≈ 3.5×10^12 keyspace → collisions negligible; retry loop handles them correctly anyway.
+## ADR-5: random 8-char codes (no look-alikes) + unique-index retry
+56^8 ≈ 9.7×10^13 keyspace → collisions negligible; retry loop handles them correctly anyway.
+The alphabet drops 0/O/o/1/l/I so a code read off a printed QR label can be typed back
+(was 7-char base62; existing codes keep working, the redirect accepts any valid code).
 Avoids a coordination point (sequencer) and non-enumerable codes are a privacy win. At true
 Bitly scale, a pre-generated key service would be the answer.
 
