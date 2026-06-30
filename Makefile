@@ -1,6 +1,6 @@
-.PHONY: up down logs migrate seed seed-load test itest load rollup ps clean
+.PHONY: up down logs migrate seed seed-load test itest load rollup ps clean web
 
-up:            ## build + start the full stack (api, worker, postgres, redis, prometheus, grafana)
+up:            ## build + start the full stack (web on :8080, api, worker, postgres, redis, prometheus, grafana)
 	docker compose up -d --build
 
 down:
@@ -32,8 +32,10 @@ itest:         ## integration tests against the running stack (needs SEED_API_KE
 
 load:          ## dockerized k6 against the host stack (run `make seed-load` first)
 	docker run --rm -i -v $(PWD)/load:/load -e BASE_URL=http://host.docker.internal:8000 \
-		grafana/k6 run /load/redirect_hot.js
-	# Linux without host.docker.internal: add --add-host=host.docker.internal:host-gateway
+		--add-host=host.docker.internal:host-gateway grafana/k6 run /load/redirect_hot.js
 
 rollup:        ## one-shot daily rollup + ledger purge
 	docker compose run --rm api python -m workers.rollup_daily
+
+web:           ## web app with hot reload on :5173 (needs the api on :8000)
+	cd frontend && npm install && npm run dev

@@ -9,6 +9,7 @@ Skipped automatically unless INTEGRATION=1.
 import asyncio
 import os
 import time
+import uuid
 
 import httpx
 import pytest
@@ -64,6 +65,21 @@ def test_delete_stops_redirects(client):
     assert client.get(f"/{code}", follow_redirects=False).status_code == 302
     assert client.delete(f"/api/v1/links/{code}", headers=HEADERS).status_code == 204
     assert client.get(f"/{code}", follow_redirects=False).status_code == 404
+
+
+def test_long_alias_preview_and_bulk_on_postgres(client):
+    """varchar(32) short codes (migration 0002) and the web app's endpoints on real PostgreSQL."""
+    alias = f"it-{uuid.uuid4().hex}"[:32]
+    r = client.post("/api/v1/links", json={"long_url": "https://example.com/l", "custom_alias": alias},
+                    headers=HEADERS)
+    assert r.status_code == 201, r.text
+    assert client.get(f"/api/v1/aliases/{alias}", headers=HEADERS).json()["available"] is False
+    page = client.get(f"/{alias}+")
+    assert page.status_code == 200 and "example.com/l" in page.text
+    bulk = client.post("/api/v1/links/bulk", headers=HEADERS,
+                       json={"links": [{"long_url": "https://example.com/b1"}, {"long_url": "nope"}]})
+    assert (bulk.json()["created"], bulk.json()["failed"]) == (1, 1)
+    assert client.get("/api/v1/activity", headers=HEADERS).status_code == 200
 
 
 def _negative_cache_hits(client) -> float:

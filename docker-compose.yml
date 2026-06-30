@@ -4,7 +4,7 @@ name: shrtr
 x-app-env: &app-env
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-shrtr}:${POSTGRES_PASSWORD:-shrtr}@postgres:5432/${POSTGRES_DB:-shrtr}
   REDIS_URL: redis://redis:6379/0
-  BASE_URL: http://localhost:8000
+  BASE_URL: ${BASE_URL:-http://localhost:8000}  # the host short links are printed with
   # optional: deterministic demo key for `make seed` (see .env.example)
   SEED_API_KEY: ${SEED_API_KEY:-}
 
@@ -55,6 +55,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # the web app: static build on nginx, /api proxied to the api service
+  web:
+    build: { context: ./frontend }
+    ports: ["8080:80"]
+    depends_on: [api]
 
   worker:
     build: { context: ., dockerfile: docker/Dockerfile }

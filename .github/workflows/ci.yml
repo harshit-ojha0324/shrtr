@@ -14,5 +14,39 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest tests/unit tests/component -q
-  # Integration tests run locally against docker compose (see README).
-  # Running them in CI with service containers is a TODO (stretch).
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build   # type-check + production build
+  integration:
+    # the real stack (postgres, redis, api, worker, migrations) under compose,
+    # with tests/integration run against it over HTTP
+    needs: lint-and-unit
+    runs-on: ubuntu-latest
+    env:
+      SEED_API_KEY: ci-only-throwaway-key   # exists only in this job's database
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build api worker
+      - name: wait for /readyz
+        run: for i in $(seq 60); do curl -fsS localhost:8000/readyz && exit 0; sleep 2; done; exit 1
+      - run: docker compose run --rm api python -m scripts.seed
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/integration -q
+        env:
+          INTEGRATION: "1"
+      - if: failure()
+        run: docker compose logs --tail 80

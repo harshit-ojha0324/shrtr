@@ -10,6 +10,8 @@ build/
 dist/
 load/codes.json
 benchmarks/**/raw/
+node_modules/
+*.tsbuildinfo
 .DS_Store
 
 # ---- personal / career files: never push these to a public repo ----
