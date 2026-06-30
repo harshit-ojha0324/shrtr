@@ -14,7 +14,7 @@ class Link(Base):
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    short_code: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
+    short_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     long_url: Mapped[str] = mapped_column(Text, nullable=False)
     api_key_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("api_keys.id"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

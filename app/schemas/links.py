@@ -20,7 +20,7 @@ class LinkCreate(BaseModel):
     @classmethod
     def _check_alias(cls, v: str | None) -> str | None:
         if v is not None and not is_valid_alias(v):
-            raise ValueError("alias must match ^[A-Za-z0-9_-]{4,12}$ and not be a reserved word")
+            raise ValueError("alias must match ^[A-Za-z0-9_-]{3,32}$ and not be a reserved word")
         return v
 
     @field_validator("expires_at")
