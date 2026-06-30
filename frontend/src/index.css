@@ -104,7 +104,7 @@ body { margin: 0; background: var(--app); color: var(--ink); font: 400 14px/1.45
 .pill.expired { background: var(--warn-soft); color: var(--warn); } .pill.deleted { background: var(--sunken); color: var(--muted); }
 .body { padding: 24px 32px 40px; display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 20px; align-items: start; }
 @media (max-width: 1100px) { .body { grid-template-columns: 1fr; } }
-@media (max-width: 560px) { .head, .body { padding-left: 16px; padding-right: 16px; } }
+@media (max-width: 560px) { .head, .body { padding-left: 16px; padding-right: 16px; } .h1 { font-size: 19px; } }
 .col { display: grid; gap: 20px; min-width: 0; }
 .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--card); min-width: 0; }
 .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
