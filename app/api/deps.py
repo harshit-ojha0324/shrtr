@@ -47,9 +47,14 @@ async def require_api_key(
 async def rate_limit(
     request: Request, response: Response, api_key: ApiKey = Depends(require_api_key)
 ) -> ApiKey:
+    return await charge(request, response, api_key)
+
+
+async def charge(request: Request, response: Response, api_key: ApiKey, cost: int = 1) -> ApiKey:
+    """Take `cost` tokens from the key's bucket (bulk create pays per row)."""
     limiter = request.app.state.rate_limiter
     try:
-        decision = await limiter.take(api_key.id, api_key.rate_capacity, api_key.refill_per_s)
+        decision = await limiter.take(api_key.id, api_key.rate_capacity, api_key.refill_per_s, cost)
     except RedisError:
         if request.method in ("POST", "DELETE", "PUT", "PATCH"):
             raise HTTPException(status_code=503, detail="rate limiter unavailable; writes are paused")

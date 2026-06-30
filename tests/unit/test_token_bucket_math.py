@@ -66,3 +66,11 @@ async def test_survives_redis_script_cache_flush(clock, limiter):
     await limiter.take(1, capacity=10, refill_per_s=1.0)
     await limiter._take.registered_client.script_flush()  # what a Redis restart does
     assert (await limiter.take(1, capacity=10, refill_per_s=1.0)).remaining == 8.0
+
+
+async def test_cost_charges_a_batch_all_or_nothing(clock, limiter):
+    d = await limiter.take(1, capacity=10, refill_per_s=1.0, cost=7)
+    assert d.allowed and d.remaining == 3.0
+    d = await limiter.take(1, capacity=10, refill_per_s=1.0, cost=5)
+    assert not d.allowed and d.remaining == 3.0  # nothing taken on reject
+    assert d.retry_after_s == 2  # (5 - 3) tokens at 1/s
