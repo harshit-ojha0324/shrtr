@@ -39,8 +39,8 @@ export const options = {
 // crude Zipf-ish skew: rank r picked with P ~ 1/r over the first 1000 codes
 function pickCode() {
   const n = Math.min(codes.length, 1000);
-  const r = Math.floor(Math.exp(Math.random() * Math.log(n)));
-  return codes[Math.min(r, n - 1)];
+  const r = Math.floor(Math.exp(Math.random() * Math.log(n))); // rank in [1, n)
+  return codes[Math.min(r, n) - 1];
 }
 
 export default function () {

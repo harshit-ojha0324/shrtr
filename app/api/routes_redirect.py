@@ -7,15 +7,16 @@ Cache-Control bounds the load tradeoff.
 """
 import hashlib
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from app.core.events import emit_click
 from app.models import Link
 from app.observability.metrics import CACHE_OPS
-from app.services.codegen import RESERVED
+from app.services.codegen import ALIAS_RE, RESERVED
 
 router = APIRouter(tags=["redirect"])
 
@@ -26,13 +27,24 @@ def _ua_hash(request: Request) -> str:
     return hashlib.sha256(ua.encode()).hexdigest()[:16] if ua else ""
 
 
+def _referrer_origin(request: Request) -> str:
+    ref = request.headers.get("referer", "")
+    if not ref:
+        return ""
+    # privacy by design: keep origin only (path/query can carry PII),
+    # same spirit as Referrer-Policy: strict-origin
+    try:
+        parts = urlsplit(ref)
+    except ValueError:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+
+
 @router.get("/{code}")
-async def redirect(
-    request: Request,
-    background: BackgroundTasks,
-    code: str = Path(min_length=4, max_length=12, pattern=r"^[A-Za-z0-9_-]+$"),
-):
-    if code.lower() in RESERVED:
+async def redirect(request: Request, background: BackgroundTasks, code: str):
+    # validate in the handler, not via Path(...): malformed codes (favicon.ico,
+    # scanner probes) should get a plain 404, not a 422 echoing pydantic internals
+    if not ALIAS_RE.fullmatch(code) or code.lower() in RESERVED:
         raise HTTPException(status_code=404)
     app = request.app
     cache = app.state.link_cache
@@ -54,9 +66,16 @@ async def redirect(
             await cache.set_negative(code)
             raise HTTPException(status_code=404)
         url = row.long_url
-        await cache.set_url(code, url)
+        await cache.set_url(code, url, expires_at=row.expires_at)
 
-    background.add_task(emit_click, app.state.redis, settings, code, _ua_hash(request))
+    background.add_task(
+        emit_click,
+        app.state.redis,
+        settings,
+        code,
+        _ua_hash(request),
+        _referrer_origin(request),
+    )
     return RedirectResponse(
         url, status_code=302, headers={"Cache-Control": "private, max-age=90"}
     )

@@ -18,4 +18,7 @@ COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 USER shrtr
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# single worker per container: prometheus_client registries are per-process,
+# so multiple uvicorn workers behind one /metrics port report garbage.
+# Scale with container replicas instead (each gets its own scrape target).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

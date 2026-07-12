@@ -1,6 +1,7 @@
-# Architecture diagram — to build
+# Architecture diagram
 
-Export a PNG of this to `docs/architecture.png` (excalidraw.com, then commit both files).
+The README carries the canonical mermaid diagram (GitHub renders it natively).
+This ASCII version is the quick terminal reference.
 
 ```
             ┌─────────────────────────────────────────────────────────┐
@@ -9,7 +10,7 @@ Export a PNG of this to `docs/architecture.png` (excalidraw.com, then commit bot
                          │ GET /{code}              │ POST /api/v1/links (X-API-Key)
                          v                          v
             ┌─────────────────────────────────────────────────────────┐
-            │                  FastAPI api (uvicorn ×2)               │
+            │        FastAPI api (1 uvicorn worker per container)     │
             │  auth → token-bucket rate limit → handler               │
             └──────┬──────────────────┬───────────────────┬──────────┘
        cache GET/SET│        rl:{key} Lua│          XADD clicks│ (background)
