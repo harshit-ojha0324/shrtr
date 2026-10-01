@@ -41,6 +41,8 @@ BATCHES = Counter("worker_batches_total", "Batches processed")
 BATCH_FAILURES = Counter("worker_batch_failures_total", "Batches that failed and were not acked")
 STREAM_PENDING = Gauge("stream_pending_entries", "Entries pending (unacked) in the consumer group")
 
+STALE_CONSUMER_MS = 3_600_000  # live workers poll every worker_block_ms, so 1h idle = gone
+
 
 def hour_floor(ts_ms: int) -> datetime:
     dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
@@ -73,6 +75,12 @@ class AnalyticsWorker:
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
+        # consumers are named per container, so each redeploy leaves one behind:
+        # drop those with nothing pending (deleting loses nothing) that stopped polling
+        key, group = self.settings.stream_key, self.settings.stream_group
+        for c in await self.redis.xinfo_consumers(key, group):
+            if c["pending"] == 0 and c["idle"] > STALE_CONSUMER_MS:
+                await self.redis.xgroup_delconsumer(key, group, c["name"])
 
     async def resolve_link_id(self, session, code: str) -> int | None:
         if code in self._link_id_cache:

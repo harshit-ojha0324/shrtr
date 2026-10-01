@@ -227,6 +227,18 @@ def test_poison_event_is_isolated_from_good_ones(stack, monkeypatch):
     assert pending["pending"] == 0
 
 
+def test_startup_drops_stale_consumers_with_nothing_pending(stack, monkeypatch):
+    _, redis, _, worker, _ = stack
+    run(worker.ensure_group())
+    run(redis.xadd("clicks", {"code": "abc1234", "ts": "1"}))
+    run(redis.xreadgroup("analytics", "old-busy", {"clicks": ">"}, count=1))  # holds a pending entry
+    run(redis.xreadgroup("analytics", "old-idle", {"clicks": ">"}, count=1))  # nothing pending
+    monkeypatch.setattr("workers.analytics.STALE_CONSUMER_MS", -1)  # everyone counts as stale
+    run(worker.ensure_group())
+    names = {c["name"] for c in run(redis.xinfo_consumers("clicks", "analytics"))}
+    assert names == {"old-busy"}  # pending entries are never orphaned
+
+
 def test_negative_cache_blocks_second_db_lookup(stack):
     client, _, _, _, sql_counter = stack
     assert client.get("/nope999", follow_redirects=False).status_code == 404
