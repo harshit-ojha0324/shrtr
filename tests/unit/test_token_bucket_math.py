@@ -1,46 +1,68 @@
-"""Frozen-clock tests of the token-bucket refill math.
-
-compute_take() is the pure-Python mirror of the Lua script; the Lua script's
-behavior against real Redis is covered by the integration suite.
+"""Frozen-clock tests of the token bucket, run against the real Lua script
+(fakeredis executes Lua), not a Python mirror of it.
 """
-from app.core.ratelimit import compute_take
+from types import SimpleNamespace
+
+import pytest
+from fakeredis import aioredis
+
+from app.core import ratelimit
+from app.core.ratelimit import RateLimiter
 
 
-def test_fresh_bucket_starts_full():
-    allowed, remaining = compute_take(None, None, capacity=10, refill_per_s=1.0, now_ms=0)
-    assert allowed and remaining == 9.0
+@pytest.fixture
+def clock(monkeypatch):
+    now = SimpleNamespace(s=1_000.0)
+    monkeypatch.setattr(ratelimit, "time", SimpleNamespace(time=lambda: now.s))
+    return now
 
 
-def test_exhaustion_at_capacity_plus_one():
-    tokens, ts = None, None
-    now = 1_000_000
-    results = []
-    for _ in range(11):
-        allowed, tokens = compute_take(tokens, ts, capacity=10, refill_per_s=1.0, now_ms=now)
-        ts = now  # same instant: no refill between calls
-        results.append(allowed)
-    assert results[:10] == [True] * 10
-    assert results[10] is False  # request capacity+1 rejected
+@pytest.fixture
+def limiter():
+    return RateLimiter(aioredis.FakeRedis(decode_responses=True))
 
 
-def test_refill_over_time():
-    # drain the bucket
-    tokens, ts = 0.0, 1_000_000
-    allowed, tokens = compute_take(tokens, ts, capacity=10, refill_per_s=2.0, now_ms=1_000_000)
-    assert not allowed
-    # 1.5s later -> 3 tokens refilled
-    allowed, tokens = compute_take(tokens, 1_000_000, capacity=10, refill_per_s=2.0, now_ms=1_001_500)
-    assert allowed
-    assert tokens == 2.0
+async def test_fresh_bucket_starts_full(clock, limiter):
+    d = await limiter.take(1, capacity=10, refill_per_s=1.0)
+    assert d.allowed and d.remaining == 9.0
 
 
-def test_refill_never_exceeds_capacity():
-    allowed, tokens = compute_take(5.0, 0, capacity=10, refill_per_s=100.0, now_ms=60_000)
-    assert allowed
-    assert tokens == 9.0  # capped at 10, then one consumed
+async def test_exhaustion_at_capacity_plus_one(clock, limiter):
+    results = [(await limiter.take(1, capacity=10, refill_per_s=1.0)) for _ in range(11)]  # same instant
+    assert [d.allowed for d in results] == [True] * 10 + [False]  # request capacity+1 rejected
+    assert results[-1].retry_after_s == 1
 
 
-def test_clock_going_backwards_is_safe():
-    allowed, tokens = compute_take(5.0, 10_000, capacity=10, refill_per_s=1.0, now_ms=5_000)
-    assert allowed
-    assert tokens == 4.0  # no negative refill
+async def test_refill_over_time(clock, limiter):
+    for _ in range(10):
+        await limiter.take(1, capacity=10, refill_per_s=2.0)
+    assert not (await limiter.take(1, capacity=10, refill_per_s=2.0)).allowed
+    clock.s += 1.5  # -> 3 tokens refilled
+    d = await limiter.take(1, capacity=10, refill_per_s=2.0)
+    assert d.allowed and d.remaining == 2.0
+
+
+async def test_refill_never_exceeds_capacity(clock, limiter):
+    await limiter.take(1, capacity=10, refill_per_s=100.0)
+    clock.s += 60
+    d = await limiter.take(1, capacity=10, refill_per_s=100.0)
+    assert d.remaining == 9.0  # capped at 10, then one consumed
+
+
+async def test_clock_going_backwards_is_safe(clock, limiter):
+    await limiter.take(1, capacity=10, refill_per_s=1.0)
+    clock.s -= 5
+    d = await limiter.take(1, capacity=10, refill_per_s=1.0)
+    assert d.allowed and d.remaining == 8.0  # no negative refill
+
+
+async def test_retry_after_is_a_ceiling(clock, limiter):
+    await limiter.take(1, capacity=1, refill_per_s=0.4)
+    d = await limiter.take(1, capacity=1, refill_per_s=0.4)
+    assert not d.allowed and d.retry_after_s == 3  # 1 / 0.4 = 2.5 -> 3
+
+
+async def test_survives_redis_script_cache_flush(clock, limiter):
+    await limiter.take(1, capacity=10, refill_per_s=1.0)
+    await limiter._take.registered_client.script_flush()  # what a Redis restart does
+    assert (await limiter.take(1, capacity=10, refill_per_s=1.0)).remaining == 8.0

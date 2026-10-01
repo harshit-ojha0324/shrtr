@@ -41,27 +41,6 @@ return {allowed, tostring(tokens)}
 """
 
 
-def compute_take(
-    tokens: float | None,
-    ts_ms: int | None,
-    capacity: int,
-    refill_per_s: float,
-    now_ms: int,
-    cost: float = 1.0,
-) -> tuple[bool, float]:
-    """Pure-Python reference of the Lua logic. Unit-tested with a frozen clock;
-    the Lua script mirrors this exactly."""
-    if tokens is None:
-        tokens = float(capacity)
-    if ts_ms is None:
-        ts_ms = now_ms
-    elapsed_s = max(0, now_ms - ts_ms) / 1000.0
-    tokens = min(float(capacity), tokens + elapsed_s * refill_per_s)
-    if tokens >= cost:
-        return True, tokens - cost
-    return False, tokens
-
-
 @dataclass
 class RateDecision:
     allowed: bool

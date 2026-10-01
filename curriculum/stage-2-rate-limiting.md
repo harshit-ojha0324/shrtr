@@ -38,8 +38,7 @@ at once: the algorithm, the distributed-correctness trap
 7. Bucket-state TTL: why the Lua script PEXPIREs the hash, and what a
    zero/negative refill rate would do to that math.
 
-Reading order: `app/core/ratelimit.py` (Lua first, then `compute_take`,
-then `take`) → `app/api/deps.py` → `tests/unit/test_token_bucket_math.py`.
+Reading order: `app/core/ratelimit.py` (Lua first, then `take`) → `app/api/deps.py` → `tests/unit/test_token_bucket_math.py`.
 
 ## Labs
 
@@ -48,9 +47,11 @@ Move `app/core/ratelimit.py` aside; rewrite from this spec: Redis hash
 `rl:{key_id}` holding `tokens` and `ts`; a Lua script that refills
 lazily (`min(capacity, tokens + elapsed_s * refill)`), spends `cost` if
 available, PEXPIREs the state to ~2 full refills, and returns
-`{allowed, tokens}`; a pure-Python `compute_take` mirror; EVALSHA with a
-`NoScriptError` reload (hand-roll it once, then swap in `register_script`); `Retry-After` computed with a real ceiling.
-Grade: `make test` — the frozen-clock unit tests must pass unmodified.
+`{allowed, tokens}`; EVALSHA with a `NoScriptError` reload (hand-roll it
+once, then swap in `register_script`); `Retry-After` computed with a real
+ceiling.
+Grade: `make test` — the frozen-clock unit tests (real Lua via fakeredis,
+clock frozen by patching `ratelimit.time`) must pass unmodified.
 
 ### Lab 2.2 — Race demonstration (do-together)
 Write a throwaway script that implements the limiter the WRONG way
