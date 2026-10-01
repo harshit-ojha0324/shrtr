@@ -242,8 +242,7 @@ rollup · `migrations/` Alembic · `scripts/seed.py` · `tests/` unit +
 component + integration · `load/` k6 · `benchmarks/` committed runs ·
 `monitoring/` Prometheus + Grafana provisioning · `docker/` Dockerfile ·
 `curriculum/` a 6-stage study program built on this repo · `docs/`
-decisions, architecture, verification checklist · `k8s/` stretch
-placeholder
+decisions, architecture, verification checklist
 
 ## Tradeoffs (reasoning in docs/decisions.md)
 
@@ -259,8 +258,9 @@ limit/offset pagination (keyset is a stretch).
 ## Honestly not built (yet)
 
 XFetch probabilistic early refresh · DB fallback when Redis is fully
-down · keyset pagination · Kubernetes manifests (`k8s/` is a placeholder
-README, no K8s claim) · multi-replica API behind a reverse proxy · chaos
+down · keyset pagination · Kubernetes manifests (separate api/worker
+Deployments, CPU HPA, probes on `/healthz`/`/readyz`; no K8s claim until
+`kubectl apply` on kind works and the HPA is observed under k6) · multi-replica API behind a reverse proxy · chaos
 scripts for the drills I ran manually. Rollups are scheduled by a plain
 `sleep 3600` compose service, not cron/CronJob.
 
