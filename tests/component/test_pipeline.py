@@ -183,6 +183,12 @@ def test_rate_limit_burst_429(stack):
     assert r.headers["X-RateLimit-Remaining"] == "0"
 
 
+def test_negative_limit_is_422_not_500(stack):
+    client, _, _, _, _ = stack
+    # PostgreSQL rejects LIMIT -1 (SQLite silently allows it), so validate at the edge
+    assert client.get("/api/v1/links?limit=-1", headers=HEADERS).status_code == 422
+
+
 def test_metrics_endpoint(stack):
     client, _, _, _, _ = stack
     r = client.get("/metrics")

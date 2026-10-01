@@ -78,7 +78,7 @@ async def create_link(
 async def list_links(
     request: Request,
     response: Response,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     api_key: ApiKey = Depends(rate_limit),
     session: AsyncSession = Depends(get_session),
