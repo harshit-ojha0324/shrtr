@@ -154,6 +154,77 @@ def test_poison_event_goes_to_dlq(stack):
     assert (pending.get("pending") if isinstance(pending, dict) else pending) == 0
 
 
+def test_absurd_timestamp_goes_to_dlq_at_parse(stack):
+    client, redis, sessions, worker, _ = stack
+    run(worker.ensure_group())
+    run(redis.xadd("clicks", {"code": "abc1234", "ts": "9" * 30}))  # year out of range
+    run(worker.process_batch(run(read_batch(worker))))
+    dlq = run(redis.xrange(worker.settings.dlq_key))
+    assert [f["reason"] for _, f in dlq] == ["parse_error"]
+
+
+def _create_and_click(client, n):
+    code = client.post("/api/v1/links", json={"long_url": "https://example.com/w"}, headers=HEADERS).json()[
+        "short_code"
+    ]
+    for _ in range(n):
+        client.get(f"/{code}", follow_redirects=False)
+    return code
+
+
+def _rollup_total(sessions):
+    async def q():
+        async with sessions() as s:
+            return sum((await s.execute(select(ClickRollupHourly.clicks))).scalars().all())
+
+    return run(q())
+
+
+def test_db_outage_never_dead_letters_good_events(stack):
+    client, redis, sessions, worker, _ = stack
+    _create_and_click(client, 5)
+    run(worker.ensure_group())
+    worker.settings = worker.settings.model_copy(update={"worker_reclaim_min_idle_ms": 0})
+    good_engine, good_sessions = worker.engine, worker.sessions
+    # PostgreSQL "down": every connection attempt fails
+    worker.engine = create_async_engine("sqlite+aiosqlite:////nonexistent-dir/x.db")
+    worker.sessions = async_sessionmaker(worker.engine)
+
+    entries = run(read_batch(worker))
+    for _ in range(10):  # far past the old 5-delivery DLQ threshold
+        with pytest.raises(Exception):
+            run(worker.process_batch(entries))
+        entries = run(worker.reclaim_stalled())
+    assert run(redis.xlen(worker.settings.dlq_key)) == 0
+
+    # DB back: the same pending entries are counted, not lost
+    worker.engine, worker.sessions = good_engine, good_sessions
+    run(worker.process_batch(entries))
+    assert _rollup_total(sessions) == 5
+    assert run(redis.xlen(worker.settings.dlq_key)) == 0
+
+
+def test_poison_event_is_isolated_from_good_ones(stack, monkeypatch):
+    client, redis, sessions, worker, _ = stack
+    _create_and_click(client, 3)
+    run(redis.xadd("clicks", {"code": "BADBAD1", "ts": "1"}))  # parses fine, fails in the DB step
+    run(worker.ensure_group())
+    real = worker.resolve_link_id
+
+    async def flaky(session, c):
+        if c == "BADBAD1":
+            raise RuntimeError("poison")
+        return await real(session, c)
+
+    monkeypatch.setattr(worker, "resolve_link_id", flaky)
+    run(worker.process_batch(run(read_batch(worker))))
+    assert _rollup_total(sessions) == 3  # good events counted
+    dlq = run(redis.xrange(worker.settings.dlq_key))
+    assert [(f["code"], f["reason"]) for _, f in dlq] == [("BADBAD1", "processing_error")]
+    pending = run(redis.xpending("clicks", worker.settings.stream_group))
+    assert pending["pending"] == 0
+
+
 def test_negative_cache_blocks_second_db_lookup(stack):
     client, _, _, _, sql_counter = stack
     assert client.get("/nope999", follow_redirects=False).status_code == 404

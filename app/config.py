@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     worker_batch_size: int = 100
     worker_block_ms: int = 5000
     worker_reclaim_min_idle_ms: int = 60_000
-    worker_max_deliveries: int = 5
     worker_metrics_port: int = 9100
 
     # DB pool

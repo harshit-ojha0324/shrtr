@@ -35,8 +35,11 @@ DLQ is DLQ).
    as a set-membership test *inside the same transaction as the effect*.
 5. Commit-before-XACK ordering: enumerate the crash windows on both
    orderings and show why commit-first is the one the ledger can absorb.
-6. XAUTOCLAIM: reclaiming from dead consumers, min-idle, delivery
-   counts, and the poison-event DLQ path (bounded via MAXLEN).
+6. XAUTOCLAIM: reclaiming from dead consumers, min-idle, and the
+   poison-event DLQ path (bounded via MAXLEN). Why a delivery-count DLQ
+   is a trap: during a DB outage every entry's count climbs, so healthy
+   events get dead-lettered. shrtr isolates poison instead (a failed batch
+   with the DB reachable is retried event by event).
 7. Rollups: hourly upsert with `clicks = clicks + EXCLUDED.clicks`,
    daily aggregation, and the ledger purge (why 48h, what replay after
    purge would mean — known limitation).
@@ -67,10 +70,12 @@ it up, and what does the final count say? Then kill the real worker
 ledger do their jobs.
 
 ### Lab 3.3 — Poison and the DLQ (do-together)
-`XADD clicks '*' garbage nothing` via redis-cli, plus an event whose
-delivery count you drive past `worker_max_deliveries` (stop the worker
-mid-PEL repeatedly). Verify both land in `clicks:dlq` with reason
-fields, and pending returns to 0.
+`XADD clicks '*' garbage nothing` via redis-cli: verify it lands in
+`clicks:dlq` with `reason=parse_error` and pending returns to 0. Then
+`docker compose stop postgres` for 10 minutes under load: verify
+`clicks:dlq` stays empty and pending grows, then start Postgres and watch
+pending drain and the counts catch up. (Before the fix, a delivery-count
+DLQ dead-lettered every click after ~5 minutes of outage.)
 
 ### Lab 3.4 — Consumer group scaling (do-together)
 `docker compose up -d --scale worker=2`, drive load, and prove entries
@@ -93,7 +98,7 @@ total vs k6's request count. Every number must be explainable —
 2. ★ Walk the commit-before-XACK crash window and how the ledger
    absorbs the redelivery. Then flip the order and name the bug.
 3. ★ What is the PEL? An entry has been in it for 10 minutes — walk
-   the XAUTOCLAIM path including the delivery-count check and DLQ.
+   the XAUTOCLAIM path, and why it does NOT dead-letter by delivery count.
 4. Why ON CONFLICT DO NOTHING **RETURNING**? What breaks if you count
    all batch entries instead of only the returned ones?
 5. Why Redis Streams and not Kafka here? Name the scale/requirements
