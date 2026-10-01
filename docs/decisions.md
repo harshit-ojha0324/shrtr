@@ -58,8 +58,9 @@ hot keys early with probability rising near expiry: refresh if
 - `stream_maxlen` trimming is a backstop: if consumers are down long enough for 1M events to
   accumulate, the oldest untrimmed-but-never-delivered clicks are silently lost (bounded loss,
   chosen over unbounded Redis growth).
-- Prometheus scrapes a single static `worker:9100` target; `--scale worker=2` runs correctly
-  (consumer group) but only one worker's metrics are collected without DNS-SD (`stretch`).
+- Prometheus discovers workers via DNS (`dns_sd_configs`, Docker returns one A record per
+  replica), so `--scale worker=N` is N scrape targets; dashboard queries `sum()` counters and
+  `max()` the group-wide pending gauge, so extra replicas don't double-count.
 
 ## Fixed after self-audit (July 2026)
 A multi-pass audit before the first public push found and fixed, among smaller items:
