@@ -39,7 +39,7 @@ def test_create_redirect_stats_roundtrip(client):
     assert r.status_code == 201, r.text
     code = r.json()["short_code"]
 
-    # redirect twice (first = cache miss, second = hit)
+    # redirect twice (create warmed the cache, so both are hits)
     for _ in range(2):
         rr = client.get(f"/{code}", follow_redirects=False)
         assert rr.status_code == 302
