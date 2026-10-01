@@ -112,7 +112,7 @@ curl -s -H "X-API-Key: $KEY" "localhost:8000/api/v1/links/$CODE/stats?granularit
 ## 5. Tests and load
 
 **Command:** `pip install -e ".[dev]" && make test`
-**Expect:** `31 passed` (unit + component; no Docker needed).
+**Expect:** `40 passed` (unit + component; no Docker needed).
 **Evidence:** "three-tier pytest suite" claim; CI badge will mirror this.
 
 **Command:** `SEED_API_KEY=$KEY make itest` (note: itest reads SEED_API_KEY and BASE_URL; stack must be up)

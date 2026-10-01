@@ -196,7 +196,7 @@ Tests:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest tests/unit tests/component -q   # 31 tests, no Docker needed
+.venv/bin/pytest tests/unit tests/component -q   # 40 tests, no Docker needed
 SEED_API_KEY=$KEY make itest                     # 6 integration tests vs the stack
 make seed-load && make load                      # the k6 benchmark
 docker compose up -d --scale worker=2            # two consumers in the group
