@@ -27,7 +27,7 @@ at once: the algorithm, the distributed-correctness trap
 3. Lazy refill: tokens computed from elapsed time on each request —
    no background refill job. Where the clock lives and why that's a
    *documented limitation* here (app server clock, multi-node skew).
-4. `retry_after = ceil((cost - tokens) / refill_rate)` — derive it.
+4. `retry_after = ceil((1 - tokens) / refill_rate)` — derive it.
 5. EVALSHA vs EVAL, the script cache, and the NOSCRIPT war story: the
    old code string-matched `"NOSCRIPT" in str(exc)` but redis-py strips
    that prefix — the recovery branch was dead code. Why catching
@@ -45,7 +45,7 @@ Reading order: `app/core/ratelimit.py` (Lua first, then `take`) → `app/api/dep
 ### Lab 2.1 — Rebuild the token bucket (rebuild-solo ★)
 Move `app/core/ratelimit.py` aside; rewrite from this spec: Redis hash
 `rl:{key_id}` holding `tokens` and `ts`; a Lua script that refills
-lazily (`min(capacity, tokens + elapsed_s * refill)`), spends `cost` if
+lazily (`min(capacity, tokens + elapsed_s * refill)`), spends one token if
 available, PEXPIREs the state to ~2 full refills, and returns
 `{allowed, tokens}`; EVALSHA with a `NoScriptError` reload (hand-roll it
 once, then swap in `register_script`); `Retry-After` computed with a real

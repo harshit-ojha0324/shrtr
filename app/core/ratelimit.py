@@ -14,7 +14,6 @@ local key      = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill   = tonumber(ARGV[2])  -- tokens per second
 local now_ms   = tonumber(ARGV[3])
-local cost     = tonumber(ARGV[4])
 
 local b = redis.call('HMGET', key, 'tokens', 'ts')
 local tokens = tonumber(b[1])
@@ -26,8 +25,8 @@ local elapsed = math.max(0, now_ms - ts) / 1000.0
 tokens = math.min(capacity, tokens + elapsed * refill)
 
 local allowed = 0
-if tokens >= cost then
-  tokens = tokens - cost
+if tokens >= 1 then
+  tokens = tokens - 1
   allowed = 1
 end
 
@@ -55,20 +54,18 @@ class RateLimiter:
         # flushed the script cache), reloads and retries once
         self._take = redis.register_script(TOKEN_BUCKET_LUA)
 
-    async def take(
-        self, key_id: int | str, capacity: int, refill_per_s: float, cost: float = 1.0
-    ) -> RateDecision:
+    async def take(self, key_id: int | str, capacity: int, refill_per_s: float) -> RateDecision:
         """Raises RedisError when Redis is unavailable -- caller chooses the
         fail-open / fail-closed policy (see api/deps.py)."""
         now_ms = int(time.time() * 1000)
         # guard misconfigured keys: refill <= 0 would break the Lua PEXPIRE
         # math and the retry-after division below
         refill_per_s = max(refill_per_s, 1e-6)
-        args = [capacity, refill_per_s, now_ms, cost]
+        args = [capacity, refill_per_s, now_ms]
         res = await self._take(keys=[f"rl:{key_id}"], args=args)
         allowed = bool(int(res[0]))
         remaining = float(res[1])
-        retry_after = 0 if allowed else max(1, math.ceil((cost - remaining) / refill_per_s))
+        retry_after = 0 if allowed else max(1, math.ceil((1 - remaining) / refill_per_s))
         return RateDecision(
             allowed=allowed, remaining=remaining, capacity=capacity, retry_after_s=retry_after
         )
