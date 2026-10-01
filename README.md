@@ -259,11 +259,10 @@ limit/offset pagination (keyset is a stretch).
 ## Honestly not built (yet)
 
 XFetch probabilistic early refresh · DB fallback when Redis is fully
-down · keyset pagination · scheduled rollups · Kubernetes manifests
-(`k8s/` is a placeholder README, no K8s claim) · multi-replica API
-behind a reverse proxy · chaos scripts for the drills I ran manually.
-Cache-aside's create/delete race windows are disclosed in
-[docs/decisions.md](docs/decisions.md) with the fix design.
+down · keyset pagination · Kubernetes manifests (`k8s/` is a placeholder
+README, no K8s claim) · multi-replica API behind a reverse proxy · chaos
+scripts for the drills I ran manually. Rollups are scheduled by a plain
+`sleep 3600` compose service, not cron/CronJob.
 
 ## License
 
