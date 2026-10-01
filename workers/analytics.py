@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import signal
+import socket
 from collections import Counter as CCounter
 from datetime import datetime, timezone
 
@@ -49,7 +50,9 @@ def hour_floor(ts_ms: int) -> datetime:
 class AnalyticsWorker:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self.name = os.environ.get("WORKER_NAME") or f"worker-{os.getpid()}"
+        # hostname (container ID under compose) + pid: every container is pid 1, so
+        # pid alone made all `--scale worker=N` replicas one consumer
+        self.name = os.environ.get("WORKER_NAME") or f"{socket.gethostname()}-{os.getpid()}"
         # redis-py 8 defaults socket_timeout to 5s, the same as our XREADGROUP block:
         # every idle poll timed out and was counted as a batch failure
         self.redis = Redis.from_url(
