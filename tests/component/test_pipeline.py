@@ -295,10 +295,12 @@ def test_stats_rejects_naive_datetimes(stack):
 
 def test_delete_beats_racing_stale_cache_write(stack):
     client, _, _, _, _ = stack
-    code = client.post("/api/v1/links", json={"long_url": "https://example.com/r"}, headers=HEADERS).json()[
-        "short_code"
-    ]
-    assert client.delete(f"/api/v1/links/{code}", headers=HEADERS).status_code == 204
+    created = client.post("/api/v1/links", json={"long_url": "https://example.com/r"}, headers=HEADERS)
+    code = created.json()["short_code"]
+    deleted = client.delete(f"/api/v1/links/{code}", headers=HEADERS)
+    assert deleted.status_code == 204
+    # rate-limit headers set in the dependency reach 201 and 204 replies too
+    assert "X-RateLimit-Remaining" in created.headers and "X-RateLimit-Remaining" in deleted.headers
     # a redirect that read the still-active row just before the delete commits
     # finishes its cache fill AFTER the delete's invalidate
     run(client.app.state.link_cache.set_url(code, "https://example.com/r"))
