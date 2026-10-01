@@ -132,9 +132,7 @@ async def delete_link(
     link = await _owned_link(session, api_key, code)
     link.is_active = False
     await session.commit()
-    cache = request.app.state.link_cache
-    await cache.invalidate(code)   # drop stale positive entry
-    await cache.set_negative(code)  # stop redirects within negative TTL
+    await request.app.state.link_cache.tombstone(code)
     _apply_rate_headers(request, response)
 
 
