@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,8 +143,8 @@ async def link_stats(
     request: Request,
     response: Response,
     granularity: str = Query(default="hour", pattern="^(hour|day)$"),
-    frm: datetime | None = Query(default=None, alias="from"),
-    to: datetime | None = Query(default=None),
+    frm: AwareDatetime | None = Query(default=None, alias="from"),  # naive = ambiguous -> 422
+    to: AwareDatetime | None = Query(default=None),
     api_key: ApiKey = Depends(rate_limit),
     session: AsyncSession = Depends(get_session),
 ):

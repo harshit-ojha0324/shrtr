@@ -254,6 +254,17 @@ def test_rate_limit_burst_429(stack):
     assert r.headers["X-RateLimit-Remaining"] == "0"
 
 
+def test_stats_rejects_naive_datetimes(stack):
+    client, _, _, _, _ = stack
+    code = client.post("/api/v1/links", json={"long_url": "https://example.com/s"}, headers=HEADERS).json()[
+        "short_code"
+    ]
+    url = f"/api/v1/links/{code}/stats"
+    # naive would be read as the server's local time by asyncpg: reject, like expires_at
+    assert client.get(url, params={"from": "2026-01-01T00:00:00"}, headers=HEADERS).status_code == 422
+    assert client.get(url, params={"from": "2026-01-01T00:00:00Z"}, headers=HEADERS).status_code == 200
+
+
 def test_delete_beats_racing_stale_cache_write(stack):
     client, _, _, _, _ = stack
     code = client.post("/api/v1/links", json={"long_url": "https://example.com/r"}, headers=HEADERS).json()[
