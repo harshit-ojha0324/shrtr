@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Rate limiting defaults (per API key; overridable per key in DB)
     rate_capacity_default: int = 60
     rate_refill_per_s_default: float = 1.0
+    # Redirect cache MISSES per client IP (hits are not limited). Generous so a
+    # cold-cache load test from one IP isn't throttled; scanners still are.
+    redirect_miss_capacity: int = 1000
+    redirect_miss_refill_per_s: float = 50.0
 
     # Redis Streams analytics pipeline
     stream_key: str = "clicks"
