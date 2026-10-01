@@ -50,7 +50,13 @@ class AnalyticsWorker:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.name = os.environ.get("WORKER_NAME") or f"worker-{os.getpid()}"
-        self.redis = Redis.from_url(self.settings.redis_url, decode_responses=True)
+        # redis-py 8 defaults socket_timeout to 5s, the same as our XREADGROUP block:
+        # every idle poll timed out and was counted as a batch failure
+        self.redis = Redis.from_url(
+            self.settings.redis_url,
+            decode_responses=True,
+            socket_timeout=self.settings.worker_block_ms / 1000 + 5,
+        )
         self.engine = make_engine(self.settings)
         self.sessions = make_sessionmaker(self.engine)
         self.shutting_down = False
