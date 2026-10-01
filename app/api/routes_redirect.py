@@ -5,9 +5,7 @@ Cache miss: single point-read on the unique short_code index, then cache fill.
 302 (not 301) so browsers/CDNs don't cache us out of our own analytics;
 Cache-Control bounds the load tradeoff.
 """
-import hashlib
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -19,25 +17,6 @@ from app.observability.metrics import CACHE_OPS
 from app.services.codegen import ALIAS_RE, RESERVED
 
 router = APIRouter(tags=["redirect"])
-
-
-def _ua_hash(request: Request) -> str:
-    ua = request.headers.get("user-agent", "")
-    # privacy by design: never store raw UA or IP
-    return hashlib.sha256(ua.encode()).hexdigest()[:16] if ua else ""
-
-
-def _referrer_origin(request: Request) -> str:
-    ref = request.headers.get("referer", "")
-    if not ref:
-        return ""
-    # privacy by design: keep origin only (path/query can carry PII),
-    # same spirit as Referrer-Policy: strict-origin
-    try:
-        parts = urlsplit(ref)
-    except ValueError:
-        return ""
-    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
 
 
 @router.get("/{code}")
@@ -68,14 +47,8 @@ async def redirect(request: Request, background: BackgroundTasks, code: str):
         url = row.long_url
         await cache.set_url(code, url, expires_at=row.expires_at)
 
-    background.add_task(
-        emit_click,
-        app.state.redis,
-        settings,
-        code,
-        _ua_hash(request),
-        _referrer_origin(request),
-    )
+    # privacy by design: the event is code + timestamp only, no IP/UA/referrer
+    background.add_task(emit_click, app.state.redis, settings, code)
     return RedirectResponse(
         url, status_code=302, headers={"Cache-Control": "private, max-age=90"}
     )

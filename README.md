@@ -226,8 +226,8 @@ keys → fast hash is appropriate; bcrypt is for low-entropy passwords).
 Submitted URLs are restricted to http/https with credentials-in-URL
 rejected and private/loopback/link-local/reserved IP literals blocked —
 including decimal/octal/hex/short-form IPv4 spellings
-(`http://2130706433/` doesn't get past it). No raw IP or User-Agent is
-ever stored (UA is hashed, referrer reduced to origin). Known gap,
+(`http://2130706433/` doesn't get past it). Click events carry only the
+code and a timestamp: no IP, User-Agent or referrer is collected. Known gap,
 disclosed: hostnames that *resolve* to private IPs (DNS rebinding)
 aren't caught — this service never fetches target URLs server-side,
 which removes the main SSRF consequence.
