@@ -22,4 +22,5 @@ def generate_code(length: int = CODE_LENGTH) -> str:
 
 
 def is_valid_alias(alias: str) -> bool:
-    return bool(ALIAS_RE.match(alias)) and alias.lower() not in RESERVED
+    # fullmatch, not match: with match, '$' also matches before a trailing newline
+    return bool(ALIAS_RE.fullmatch(alias)) and alias.lower() not in RESERVED
